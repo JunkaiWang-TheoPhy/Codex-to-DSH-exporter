@@ -171,7 +171,8 @@ The test suite reads the real harness home when one exists. Those tests are
 read-only and skip cleanly otherwise, and they have already paid for
 themselves:
 
-- 43 real sessions verified against paths re-derived from their own headers.
+- Every real session on the machine verified against a path re-derived from
+  its own header.
 - The generation distribution `v0:4 v3:39` discovered, along with the fact that
   generation 0 headers carry no `isSeeded`.
 - The compression-versus-generation conflation found: four sessions were being

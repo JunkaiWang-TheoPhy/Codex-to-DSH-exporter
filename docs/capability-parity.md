@@ -154,7 +154,8 @@ Not a parity claim — a list of problems that only appear once the target is DS
   invariants that no type expresses, each documented with the real rejection
   message. See `docs/mapping.md` §3.
 - **Storage-identity derivation.** `projectKey` reproduced from the harness's
-  own implementation and verified against 43 real session directories.
+  own implementation and verified against every real session directory on the
+  author's machine.
 - **Generation-aware paths.** Discovering that compression and generation are
   independent axes, and that a version-blind path helper drops real sessions.
 - **Ordering repair.** Synthesizing a `tool/call` for an orphan result and

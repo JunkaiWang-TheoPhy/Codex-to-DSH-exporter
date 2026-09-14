@@ -72,7 +72,8 @@ Two consequences shape every write:
 ### 2.1 Path derivation
 
 `projectKey` reproduces DSH's own function. Reproduced verbatim and verified
-against 43 real session directories on the author's machine:
+against every real session directory on the author's machine (43 at the time
+of writing):
 
 | Input | Output | Rule |
 |---|---|---|
