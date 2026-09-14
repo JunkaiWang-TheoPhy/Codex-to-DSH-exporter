@@ -30,7 +30,7 @@ export interface NormalizeOptions {
    * `encrypted_content` is not retained in any case.
    */
   readonly keepReasoning?: boolean;
-  /** Keep `telemetry` entries such as `token_count`. 12.8% of bytes. */
+  /** Keep `telemetry` entries such as `token_count`. 2.8% of bytes. */
   readonly keepTelemetry?: boolean;
   /** Distance in entries within which a duplicate message is recognized. */
   readonly dedupeWindow?: number;

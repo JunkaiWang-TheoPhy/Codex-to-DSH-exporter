@@ -210,9 +210,9 @@ an older table is not identical to one imported under a newer one.
 
 ### 5.1 The conversation is written twice
 
-Codex writes each user and agent message on both channels. Measured byte share:
-`event_msg/user_message` 4.3%, `response_item/message` 5.6%,
-`event_msg/agent_message` 1.1%.
+Codex writes each user and agent message on both channels. Measured on a
+uniform random sample of 200 rollouts, messages occupy 5.6% of bytes on the
+response channel and a comparable share on the event channel.
 
 Keeping both duplicates every message in any downstream view. `dedupeEventChannel`
 matches by role and exact text within a bounded window, because the channels
@@ -239,16 +239,43 @@ this guard the fixture produced one `turn/start` against three `turn/end`.
 `call_id`. Reading the wrong field produces a silently unpaired result. Both
 are handled, and a test asserts the pair agrees.
 
-## 6. What is lost
+## 6. What a tier costs
+
+Measured on the same uniform random sample, as a share of corpus bytes:
+
+| Tier | Contents | Share | 38 GB becomes | On disk (4.3x) |
+|---|---|---|---|---|
+| Narrative | messages, tool calls and outputs, turn and step boundaries, context, `session_meta` | 59.9% | 22.8 GB | **5.3 GB** |
+| Narrative + readable reasoning | the above plus `content` and `summary` | 60.1% | 22.8 GB | **5.3 GB** |
+| Everything except telemetry | the above plus `compacted` replacement text and unmodelled records | 79.9% | 30.4 GB | 7.1 GB |
+
+Two figures drive the choice, and neither is the one an early measurement of
+this corpus suggested:
+
+- **Reasoning is 7.0% of bytes, not the majority.** Keeping its readable part
+  is free to two significant figures. The argument for preserving it does not
+  need a size argument at all.
+- **Telemetry is the expensive thing to keep.** `event_msg/item_completed` is
+  11.9% of bytes and `event_msg/token_count` 2.8%. Between them they cost about
+  1.3 GB on disk and carry no conversational content.
+
+**Correction.** An earlier revision of this document stated that reasoning was
+46.7% of corpus bytes. That figure came from sampling the first sixty files in
+directory order, which are the oldest and smallest sessions. The uniform sample
+puts it at 7.0%. The conclusion — preserve readable reasoning, drop telemetry —
+survives, but it rests on the corrected numbers.
+
+## 7. What is lost
 
 Stated plainly, because a mapping document that only lists successes is
 misleading.
 
-- **Encrypted reasoning.** `response_item/reasoning` is the single largest byte
-  consumer in a rollout. Measured over 5,542 records: `encrypted_content` is
-  **85.5%** of that record's bytes. It is opaque outside OpenAI's own systems.
-  Only `content` and `summary` — **2.0%** of reasoning bytes — are readable, and
-  only those are carried.
+- **Encrypted reasoning.** Measured on a uniform random sample of 200
+  rollouts: reasoning is **7.0%** of corpus bytes, and `encrypted_content` is
+  **84.1%** of a reasoning record. Only `content` and `summary` — **2.5%** of
+  reasoning bytes, **0.17%** of the corpus — are readable, and only those are
+  carried. Excluding the ciphertext costs almost nothing; it is simply not
+  information.
 - **Token accounting** unless explicitly requested.
 - **`base_instructions`**, the full Codex system prompt, several kilobytes per
   session.
@@ -258,7 +285,7 @@ misleading.
 - **Turn identity.** Codex `turn_id` values are not carried; DSH turns are
   positional.
 
-## 7. Reproduction
+## 8. Reproduction
 
 ```bash
 pnpm run build

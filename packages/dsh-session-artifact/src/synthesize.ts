@@ -58,7 +58,7 @@ export const DEFAULT_MAPPING: Readonly<Record<string, Treatment>> = {
   'compacted/-': { kind: 'preserve', as: 'codex/compaction' },
   'response_item/ghost_snapshot': {
     kind: 'drop',
-    reason: 'editor snapshot with no conversational content; 1.0% of bytes',
+    reason: 'editor snapshot with no conversational content',
   },
   'event_msg/user_message': {
     kind: 'drop',

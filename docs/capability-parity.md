@@ -75,7 +75,7 @@ event, which requires reading the artifact. The index carries the field and
 (where the title is the opening prompt) and leaves DSH titles unset until a
 reader extracts them. Searching DSH sessions by workspace and id works today.
 
-**Message bodies are not indexed.** A body index over the author's 38 GB of
+**Message bodies are not indexed.** A body index over this machine's 38 GB of
 Codex rollouts would be a different project with a different cost profile, and
 the prompt plus workspace is what makes history findable in practice. The
 bounded head read that makes indexing 5,536 rollouts take 20.8 seconds exists

@@ -2,17 +2,24 @@
  * Normalized intermediate representation of a Codex rollout.
  *
  * A Codex rollout is a JSONL file whose physical rows are
- * `{ timestamp, type, payload }`. The `type` field takes only five values,
- * while `payload.type` carries the semantically meaningful discriminator.
- * Measured on 300 files / 122,018 rows:
+ * `{ timestamp, type, payload }`. The `type` field takes several values, while
+ * `payload.type` carries the semantically meaningful discriminator.
  *
- * | top-level type  | rows   |
- * | --------------- | ------ |
- * | `response_item` | 69,202 |
- * | `event_msg`     | 44,607 |
- * | `turn_context`  |  7,921 |
- * | `session_meta`  |    244 |
- * | `compacted`     |     44 |
+ * Measured on a uniform random sample of 200 rollouts from this machine's
+ * 5,138-file, 38 GB corpus: 207,428 rows.
+ *
+ * | top-level type  | share of rows |
+ * | --------------- | ------------- |
+ * | `response_item` | 54.3% |
+ * | `event_msg`     | 42.8% |
+ * | `turn_context`  |  1.2% |
+ * | `token_usage_record` | 0.7% |
+ * | `world_state`   |  0.4% |
+ * | `session_meta`  |  0.2% |
+ *
+ * The sample has to be uniform. An earlier version of this table used the
+ * first 300 files in directory order, which are the oldest and smallest, and
+ * it overstated reasoning's share of the corpus by a factor of six.
  *
  * This module normalizes both channels into one `RolloutEntry` union so that
  * downstream consumers never branch on the physical channel.
