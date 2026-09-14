@@ -14,11 +14,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { projectKey as deriveProjectKey } from '@codex-to-dsh/dsh-session-artifact';
-import type { SessionStore, SessionBundle } from './store.ts';
+import type { SessionStore } from './store.ts';
 
 /** One artifact recorded in a bundle manifest. */
 export interface BundleEntry {
@@ -219,6 +219,3 @@ function basename(path: string): string {
   const index = path.lastIndexOf('/');
   return index === -1 ? path : path.slice(index + 1);
 }
-
-/** Re-exported so callers can build a bundle listing without importing the store type. */
-export type { SessionBundle };

@@ -89,6 +89,23 @@ function ago(epochMs: number): string {
   return 'just now';
 }
 
+/**
+ * Warn when the index was built against a different Codex home.
+ *
+ * The index records which home it describes. A stale index from another home
+ * produces plausible-looking results pointing at rollout files that are not
+ * there, which is worse than an empty result, so the mismatch is surfaced on
+ * every call rather than silently tolerated.
+ * @param index - a loaded index.
+ * @param configuredHome - the home this plugin is configured to describe.
+ * @returns a warning line, or an empty string when the two agree.
+ */
+function stalenessWarning(index: RolloutIndex, configuredHome: string): string {
+  if (index.codexHome === configuredHome) return '';
+  return `Warning: this index describes ${index.codexHome}, but the plugin is configured for `
+    + `${configuredHome}. Re-run: codex-to-dsh index build --codex-home ${configuredHome}\n\n`;
+}
+
 /** Read and parse a JSON file, returning `undefined` on any failure. */
 async function readJson<T>(path: string): Promise<T | undefined> {
   try {
@@ -136,6 +153,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (index === undefined) {
           return `No Codex history index at ${rolloutIndexPath}.\nRun: codex-to-dsh index build`;
         }
+        const stale = stalenessWarning(index, codexHome);
 
         const needle = args.query.trim().toLowerCase();
         const limit = args.limit ?? maxResults;
@@ -147,10 +165,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           .slice(0, limit);
 
         if (matches.length === 0) {
-          return `No Codex sessions match "${args.query}" (searched ${index.entries.length}).`;
+          return `No Codex sessions match "${args.query}" (searched ${index.entries.length}).${stale}`;
         }
 
-        return matches
+        return stale + matches
           .map((entry) =>
             `${entry.title ?? '(no recorded prompt)'}\n`
             + `  workspace: ${entry.cwd ?? '(none)'}\n`
@@ -178,6 +196,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (index === undefined) {
           return `No Codex history index at ${rolloutIndexPath}.\nRun: codex-to-dsh index build`;
         }
+        const stale = stalenessWarning(index, codexHome);
 
         const needle = args.id.trim().toLowerCase();
         const exact = index.entries.find((entry) => entry.id.toLowerCase() === needle);
@@ -185,14 +204,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           ? [exact]
           : index.entries.filter((entry) => entry.id.toLowerCase().startsWith(needle));
 
-        if (matches.length === 0) return `No Codex session matches id "${args.id}".`;
+        if (matches.length === 0) return `No Codex session matches id "${args.id}".${stale}`;
         if (matches.length > 1) {
-          return `"${args.id}" is ambiguous; ${matches.length} sessions start with it:\n`
+          return stale + `"${args.id}" is ambiguous; ${matches.length} sessions start with it:\n`
             + matches.slice(0, 10).map((entry) => `  ${entry.id}  ${entry.title ?? ''}`).join('\n');
         }
 
         const entry = matches[0]!;
-        return `${entry.path}\n  workspace: ${entry.cwd ?? '(none)'}\n  when: ${ago(entry.createdAt)}`
+        return stale + `${entry.path}\n  workspace: ${entry.cwd ?? '(none)'}\n  when: ${ago(entry.createdAt)}`
           + `\n  size: ${human(entry.bytes)}\n  title: ${entry.title ?? '(none)'}`;
       },
     }),

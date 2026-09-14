@@ -61,22 +61,6 @@ export interface TrashedSession {
   readonly storedAt: string;
 }
 
-/** A portable transfer bundle, the DSH-side analogue of a session export. */
-export interface SessionBundle {
-  readonly format: 'codex-to-dsh/session-bundle';
-  readonly version: 1;
-  readonly createdAt: number;
-  readonly origin: string;
-  readonly sessions: readonly {
-    readonly sessionId: string;
-    readonly projectKey: string;
-    readonly cwd: string | undefined;
-    readonly formatVersion: number;
-    /** Path inside the bundle. */
-    readonly file: string;
-  }[];
-}
-
 export interface SessionStoreOptions {
   /** DSH home, i.e. the parent of `sessions/`. */
   readonly home: string;
@@ -280,7 +264,7 @@ export class SessionStore {
    * @returns the manifest entries created.
    */
   async trash(sessionIds: readonly string[]): Promise<TrashedSession[]> {
-    await this.loadTrashManifest();
+    await mkdir(this.#trashDir, { recursive: true });
     const manifest = await this.readTrashManifest();
     const moved: TrashedSession[] = [];
 
@@ -392,10 +376,5 @@ export class SessionStore {
       `${JSON.stringify(manifest, null, 2)}\n`,
       'utf8',
     );
-  }
-
-  /** No-op guard kept symmetric with {@link saveIndex}. */
-  async loadTrashManifest(): Promise<void> {
-    await mkdir(this.#trashDir, { recursive: true });
   }
 }

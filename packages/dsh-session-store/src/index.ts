@@ -21,7 +21,6 @@ export type { DiscoveredArtifact, SessionRecord } from './discover.ts';
 export { SessionStore } from './store.ts';
 export type {
   SearchQuery,
-  SessionBundle,
   SessionStoreOptions,
   TrashedSession,
   WorkspaceGroup,

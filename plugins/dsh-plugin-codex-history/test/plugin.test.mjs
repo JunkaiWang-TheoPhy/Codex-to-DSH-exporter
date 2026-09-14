@@ -32,14 +32,14 @@ function captureContext() {
 }
 
 /** Write a minimal harness home containing an index the plugin can read. */
-function makeHome({ rollouts = [], sessions = [] } = {}) {
+function makeHome({ rollouts = [], sessions = [], codexHome = '/home/u/.codex' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'codex-history-plugin-'));
   mkdirSync(join(home, 'codex-to-dsh'), { recursive: true });
 
   if (rollouts.length > 0) {
     writeFileSync(join(home, 'codex-to-dsh', 'rollout-index.json'), JSON.stringify({
       version: 1,
-      codexHome: '/home/u/.codex',
+      codexHome,
       builtAt: Date.now(),
       entries: rollouts,
     }));
@@ -93,7 +93,7 @@ test('search renders matches and reports the searched total', async () => {
     ],
   });
   const { ctx, tools } = captureContext();
-  apply(ctx, { dshHome: home });
+  apply(ctx, { dshHome: home, codexHome: '/home/u/.codex' });
 
   const search = tools.get('codex_history_search');
   const hit = await search.execute({ query: 'gauge' }, { signal });
@@ -133,7 +133,7 @@ test('locate resolves a unique id and refuses an ambiguous prefix', async () => 
   const locate = tools.get('codex_history_locate');
 
   const exact = await locate.execute({ id: 'aaaa-1111' }, { signal });
-  assert.match(exact, /^\/c\/a\.jsonl/, 'an exact id resolves to the rollout path');
+  assert.match(exact, /\/c\/a\.jsonl/, 'an exact id resolves to the rollout path');
 
   const ambiguous = await locate.execute({ id: 'aaaa' }, { signal });
   assert.match(ambiguous, /ambiguous/);
@@ -182,6 +182,35 @@ test('an aborted call refuses to run', async () => {
     () => tools.get('codex_history_search').execute({ query: 'x' }, { signal: controller.signal }),
     /abort/i,
   );
+
+  await rm(home, { recursive: true, force: true });
+});
+
+test('a stale index from another Codex home is reported rather than trusted', async () => {
+  // An index built against a different home yields plausible results pointing
+  // at rollout files that do not exist, which is worse than an empty result.
+  // The index describes one home; the plugin is configured for another.
+  const home = makeHome({
+    codexHome: '/home/u/.codex.archive',
+    rollouts: [
+      { id: 'aaaa-1111', path: '/elsewhere/a.jsonl', cwd: '/w/a', createdAt: Date.now(), title: 'From another home', bytes: 10, layout: 'dated' },
+    ],
+  });
+  const { ctx, tools } = captureContext();
+  apply(ctx, { dshHome: home, codexHome: '/home/u/.codex' });
+
+  const result = await tools.get('codex_history_search').execute({ query: 'another' }, { signal });
+  assert.match(result, /Warning: this index describes \/home\/u\/\.codex\.archive/, 'the mismatch is named');
+  assert.match(result, /configured for \/home\/u\/\.codex/);
+  assert.match(result, /codex-to-dsh index build --codex-home/, 'the message says how to fix it');
+  assert.match(result, /From another home/, 'and the results are still returned');
+
+  // With the configuration matching the index, no warning appears.
+  const matching = captureContext();
+  apply(matching.ctx, { dshHome: home, codexHome: '/home/u/.codex.archive' });
+  const quiet = await matching.tools.get('codex_history_search').execute({ query: 'another' }, { signal });
+  assert.ok(!quiet.includes('Warning'), 'a matching configuration is silent');
+  assert.match(quiet, /From another home/, 'and still returns results');
 
   await rm(home, { recursive: true, force: true });
 });
