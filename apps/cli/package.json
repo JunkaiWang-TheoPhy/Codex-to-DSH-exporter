@@ -1,0 +1,23 @@
+{
+  "name": "@codex-to-dsh/cli",
+  "version": "0.1.0",
+  "description": "Command line interface for inspecting a Codex environment and managing DSH sessions",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh.git",
+    "directory": "apps/cli"
+  },
+  "bin": {
+    "codex-to-dsh": "src/main.ts"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "dependencies": {
+    "@codex-to-dsh/codex-rollout": "workspace:*",
+    "@codex-to-dsh/dsh-session-artifact": "workspace:*",
+    "@codex-to-dsh/dsh-session-store": "workspace:*"
+  }
+}

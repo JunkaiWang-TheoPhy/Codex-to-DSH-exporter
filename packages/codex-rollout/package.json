@@ -1,0 +1,30 @@
+{
+  "name": "@codex-to-dsh/codex-rollout",
+  "version": "0.1.0",
+  "description": "Streaming parser for Codex rollout JSONL session logs",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh.git",
+    "directory": "packages/codex-rollout"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "tsc --build"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "codex-to-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bridge a Codex working environment and its session history into the DeepSeek Harness",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh.git"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "test": "node --test \"packages/*/test/*.test.mjs\" \"plugins/*/test/*.test.mjs\"",
+    "cli": "node --experimental-strip-types apps/cli/src/main.ts",
+    "typecheck": "tsc --build",
+    "verify": "pnpm run build && pnpm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

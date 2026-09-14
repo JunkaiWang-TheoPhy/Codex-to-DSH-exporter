@@ -1,0 +1,38 @@
+{
+  "name": "@codex-to-dsh/dsh-plugin-codex-history",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin exposing Codex session history and DSH session listings as agent tools",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh.git",
+    "directory": "plugins/dsh-plugin-codex-history"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "//": "This plugin declares no dependency on the harness packages. The host provides `ctx` at runtime, and the API surface this plugin uses is declared locally in src/dsh-types.ts, so the repository builds without a DSH checkout. See README.md."
+}

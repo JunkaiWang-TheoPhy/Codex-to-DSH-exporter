@@ -1,0 +1,25 @@
+{"timestamp":"2026-01-02T03:04:05.000Z","type":"session_meta","payload":{"id":"019f0000-0000-7000-8000-000000000001","timestamp":"2026-01-02T03:04:05.000Z","cwd":"/home/example/work/demo-project","originator":"codex_cli_rs","cli_version":"0.0.0-fixture","source":"cli","model_provider":"openai","base_instructions":{"text":"Synthetic fixture. Not a real session."}}}
+{"timestamp":"2026-01-02T03:04:06.000Z","type":"turn_context","payload":{"cwd":"/home/example/work/demo-project","model":"gpt-5","approval_policy":"never","sandbox_policy":{"mode":"workspace-write","network_access":false}}}
+{"timestamp":"2026-01-02T03:04:06.100Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1","started_at":1,"model_context_window":400000}}
+{"timestamp":"2026-01-02T03:04:07.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List the files in this project and tell me what it does."}]}}
+{"timestamp":"2026-01-02T03:04:07.010Z","type":"event_msg","payload":{"type":"user_message","message":"List the files in this project and tell me what it does.","images":[],"local_images":[],"text_elements":[]}}
+{"timestamp":"2026-01-02T03:04:08.000Z","type":"response_item","payload":{"type":"reasoning","content":[],"summary":"The user wants an inventory plus a purpose summary.","encrypted_content":"b3BhcXVlLWZpeHR1cmUtY2lwaGVydGV4dA=="}}
+{"timestamp":"2026-01-02T03:04:09.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\",\"-la\"]}","call_id":"call_fixture_1"}}
+{"timestamp":"2026-01-02T03:04:09.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_fixture_1","output":"total 8\ndrwxr-xr-x  3 user staff   96 Jan  2 03:04 .\n-rw-r--r--  1 user staff  120 Jan  2 03:04 README.md"}}
+{"timestamp":"2026-01-02T03:04:10.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1200,"output_tokens":90,"total_tokens":1290},"last_token_usage":{"input_tokens":1200,"output_tokens":90}},"rate_limits":null}}
+{"timestamp":"2026-01-02T03:04:11.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The project contains a single README.md."}]}}
+{"timestamp":"2026-01-02T03:04:11.010Z","type":"event_msg","payload":{"type":"agent_message","message":"The project contains a single README.md."}}
+{"timestamp":"2026-01-02T03:04:12.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"message"},"thread_id":"th1","turn_id":"t1","completed_at_ms":12000}}
+{"timestamp":"2026-01-02T03:04:12.100Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","completed_at":12000,"duration_ms":6000,"time_to_first_token_ms":900,"last_agent_message":"The project contains a single README.md."}}
+{"timestamp":"2026-01-02T03:04:20.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Now summarise the README."}]}}
+{"timestamp":"2026-01-02T03:04:21.000Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"Reading the README first."}}
+{"timestamp":"2026-01-02T03:04:22.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_fixture_2","name":"apply_patch","input":"*** Begin Patch\n*** End Patch","status":"completed"}}
+{"timestamp":"2026-01-02T03:04:22.500Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_fixture_2","output":"Done!"}}
+{"timestamp":"2026-01-02T03:04:23.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_orphan_9","output":"This output has no matching call and must be paired by the importer."}}
+{"timestamp":"2026-01-02T03:04:24.000Z","type":"response_item","payload":{"type":"web_search_call","id":"ws_fixture_1","status":"completed","action":{"type":"search","query":"fixture"}}}
+{"timestamp":"2026-01-02T03:04:24.500Z","type":"event_msg","payload":{"type":"web_search_end","call_id":"ws_fixture_1","query":"fixture","results":[{"title":"Synthetic result","url":"https://example.invalid/"}]}}
+{"timestamp":"2026-01-02T03:04:25.000Z","type":"response_item","payload":{"type":"ghost_snapshot","ghost_commit":"deadbeef"}}
+{"timestamp":"2026-01-02T03:04:26.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions>sandbox_mode is workspace-write</permissions>"}]}}
+{"timestamp":"2026-01-02T03:04:27.000Z","type":"compacted","payload":{"replacement_text":"Earlier turns elided by compaction."}}
+{"timestamp":"2026-01-02T03:04:28.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The README describes a demonstration project."}]}}
+{"timestamp":"2026-01-02T03:04:29.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t2","completed_at":29000,"duration_ms":3000}}

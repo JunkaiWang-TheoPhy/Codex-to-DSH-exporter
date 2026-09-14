@@ -1,0 +1,21 @@
+# Build output
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Local scratch and tool state — never commit real session data, logs, or credentials
+_recon/
+.omx/
+*.local.json
+*.local.yml
+scratch/
+tmp/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
