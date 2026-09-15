@@ -21,3 +21,7 @@ node_modules/
 
 # npm pack 发布产物（上传到 GitHub Release，不入库）
 *.tgz
+
+# 本仓库新增的包的构建产物
+packages/*/dist/
+packages/*/*.tsbuildinfo
