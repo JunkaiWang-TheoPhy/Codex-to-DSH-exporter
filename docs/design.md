@@ -255,47 +255,59 @@ obvious guess:
   strictness. The repository does not pin a harness version, and the format is
   a release candidate. Re-run `convert` against the fixture after upgrading.
 
-## 9. Positioning: this is an exporter
+## 9. Positioning: withdrawn
 
-Established 2026-09-15, after surveying the destination ecosystem.
+**The exporter positioning stated here on 2026-09-15 was withdrawn the same day.**
 
-The project is an **exporter**. It stands on the Codex side, reads a Codex home
-read-only, and produces a portable, verifiable, self-describing archive. A DSH
-importer is a separate program that reads that archive.
+It rested on a real measurement — of the 3,632 entries in the curated DSH plugin
+catalogue, exactly one describes itself as reading `~/.codex`. That measurement
+answers *"how many DSH plugins read a Codex home"*. The positioning needed the
+answer to *"is Codex session export occupied"*, and that answer is no:
 
-That single sentence settles the scope, and it settles it the same way three
-independent lines of reasoning did:
+| Stars | Project | What it does |
+|---|---|---|
+| 201 | `Red-noblue/Codex_Relay` | Cross-device export/import plus a local session vault, zipped, for `codex resume` continuity |
+| 104 | `Aiyawoc/CodexSessionManager` | Auditing, backing up, importing, and cleaning Codex sessions, GUI and CLI |
+| 103 | `WangPeterXF/session-harbor` | A verified filesystem vault for Codex rollouts; zero-dependency Node CLI, external drive or NAS |
+| 98 | `xhluca/session-migrate` | Migrate sessions among 18 harnesses; MIT, PyPI, active |
+| 97 | `heyroute-ai/codex-threadkeeper` | Sync session metadata and SQLite state |
+| 58 | `pangkk18/codex-history-sync` | Dependency-free Python CLI |
 
-| Module | Under the exporter positioning |
-|---|---|
-| `packages/codex-rollout` | **Core.** Reading `~/.codex` is the job. |
-| `docs/archive-format.md` | **The product.** The archive is what ships. |
-| `packages/dsh-session-artifact` | Moves to the importer side. Kept here as the reference implementation of the target format. |
-| `packages/dsh-session-store` | **Out.** DSH-side, and its list/search was a weaker subset of the harness's built-in `sessionQuery`. |
-| `plugins/dsh-plugin-codex-history` | **Out.** A DSH-side plugin contradicts standing on the Codex side. |
+Every element the positioning claimed — portable archive, verification, audit,
+cross-harness migration, boot-free CLI — has a mature implementation with three
+figures of stars. `session-harbor` is the closest: local-first, verified, vault
+on removable media, Node CLI. Two of these carry restrictive or absent licences
+(`session-harbor` is PolyForm Noncommercial, `Codex_Relay` has no licence at
+all), and `session-migrate` is MIT, published, and was updated four days before
+this note.
 
-### Why the position is open
+`session-migrate` does not support DSH among its 18 harnesses. That is a pull
+request, not a product.
 
-Measured on the curated catalogue of 3,632 DSH plugins: exactly **one**
-describes itself as reading `~/.codex`, and it is a two-way bridge rather than an
-exporter. Everything else in that ecosystem runs inside the harness. An exporter
-runs where the data is.
+### What survives
 
-Two further facts support the framing. The nearest competitor, `dsh-chat-import`
-(★161, 18,714 monthly downloads, 24 releases in 31 days), reads and writes in one
-opaque step: it needs DSH installed and running, and if it fails partway there is
-no artifact to inspect. And it cannot set `ignorable` on preserved events,
-because it writes through a host API that does not expose the flag — so the
-reasoning and telemetry it drops are partly a constraint of its architecture.
+The repository's format work is not invalidated; its product framing is. Three
+findings here are not in any of the projects above:
 
-An exporter inverts both. It runs before DSH is involved, produces something a
-person can inspect and verify before trusting, and is not limited by the
-destination's event vocabulary.
+1. **DSH's structural invariants, written as a specification.** `docs/mapping.md`
+   C1–C5. At least three independent authors rediscovered parts of this by
+   hitting the validator — `session-rdb` ships a repair pass that backfills
+   `stream: []` and adds missing `surfaceOp` markers, which are C3 and C1 here.
+   Nobody has written them down.
+2. **`ignorable` is unreachable from the public write path but reachable when
+   hand-encoding.** Two plugin authors met this wall from opposite sides. It
+   determines whether a plugin that emits custom events produces loadable
+   sessions.
+3. **`session.vN.jsonl.zstd` generation handling.** `dsh-chat-import` matches
+   only `session.jsonl(.zstd)` and so cannot read current-generation logs.
 
-### What this does not claim
+The honest form of these is contributions — to `session-migrate`'s format
+documentation, and to `dsh-chat-import` as a bug report — not a competing
+product.
 
-The ecosystem is mature and fast-moving; the exporter position being open today
-is not a durable moat. The defensible asset is narrower than the position: the
-format invariants documented in `docs/mapping.md`, the traffic between the two
-write paths, and the `session.vN.jsonl.zstd` generation handling that the
-nearest competitor gets wrong.
+### The user-facing consequence
+
+For the original goal, installing `dsh-chat-import` solves it today. It has 163
+stars, 18,714 monthly downloads, covers 21 agents including Codex, writes real
+DSH v3 sessions through the host API, and ships 73 test files. Building a
+competitor would be the wrong use of the format work.
