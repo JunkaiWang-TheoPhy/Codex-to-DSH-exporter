@@ -1,125 +1,97 @@
-> **This is a fork.** It is secondary development on
-> [`Nwflower/dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import)
-> (MIT, Copyright (c) 2026 Nwflower and Scarlett), renamed to
-> `Codex-to-DSH-exporter` and extended with an export half and seven
-> fidelity fixes. See [`NOTICE`](NOTICE) for the origin and
-> [`docs/fork-plan.md`](docs/fork-plan.md) for what changed and why.
->
-> **Known state of the inherited test suite.** `npm test` reports
-> **688 pass, 27 fail** both here and on a pristine checkout of upstream at
-> version 0.11.3. Upstream's own CI has failed on `main` for every recent run,
-> at the `npm test` step. The failures are not introduced by this fork and are
-> not yet fixed. One of them is documented as intentional behaviour in
-> `lib/import-core.mjs:261` — a cross-platform `cwd` is deleted so the session
-> degrades to ungrouped rather than the whole import being rejected — while the
-> test asserts the opposite. This is the first thing to resolve.
->
-> **Where this repository is going.** The export half lives in
-> `packages/codex-archive`, reading a Codex home read-only and writing the
-> portable archive specified in [`docs/archive-format.md`](docs/archive-format.md).
-> `packages/dsh-session-artifact` reproduces the DSH session format and storage
-> path from the harness's own source, verified against real session directories.
-> Everything below this line is the upstream README and still describes
-> `dsh-chat-import` accurately.
-
----
-
 <div align="center">
 
-<img src="./assets/dci-promo.png" alt="DSH Chat Import" width="100%" />
+🇬🇧 **English** | 🇨🇳 [中文](README.zh.md)
 
-# DSH Chat Import
+# Codex-to-DSH-exporter
 
-**A DeepSeek Harness plugin that imports conversation history from 18+ AI coding tools, so you can continue right where you left off.**
+[![License](https://img.shields.io/badge/license-MIT-2EA44F?style=flat)](LICENSE)
+[![Base](https://img.shields.io/badge/base-dsh--chat--import%20v0.11.3-4D6BFE?style=flat)](https://github.com/Nwflower/dsh-chat-import)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.13-43853D?style=flat)](package.json)
+[![Test baseline](https://img.shields.io/badge/tests-688%20%2F%20715-B08900?style=flat)](#status)
 
-> **All sessions, continued in DSH.**
-
-[![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md) [![简体中文](https://img.shields.io/badge/lang-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-red.svg)](README.zh-CN.md)
-
-[![version](https://img.shields.io/npm/v/dsh-chat-import?style=flat&label=version&color=4D6BFE)](https://www.npmjs.com/package/dsh-chat-import)
-[![downloads](https://img.shields.io/npm/dm/dsh-chat-import?style=flat&label=downloads&color=4D6BFE)](https://www.npmjs.com/package/dsh-chat-import)
-[![GitHub stars](https://img.shields.io/github/stars/Nwflower/dsh-chat-import?style=flat&label=%E2%98%85&color=08C)](https://github.com/Nwflower/dsh-chat-import)
-[![GitCode](https://img.shields.io/badge/GitCode-mirror-4D6BFE?style=flat)](https://gitcode.com/Nwflower/dsh-chat-import)
-[![license](https://img.shields.io/badge/license-MIT-2EA44F?style=flat)](LICENSE)
-[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
-[![dsh.so install](https://www.dsh.so/badge/install/dsh-chat-import.svg)](https://www.dsh.so/artifact/dsh-chat-import/)
+<img src="assets/banner.png" alt="An archive drawer of filed cards with one card drawn out and stamped, feeding into a sealed archive block" width="1000">
 
 </div>
 
-## Intro
+## Introduction
 
-`DSH Chat Import` imports conversation history with full context from other agents, turning it into a seamlessly resumable DeepSeek Harness session.
+A Codex working environment lives inside one program's directory: sessions, skills, agent definitions, MCP servers, the command allow-list. Getting it into the DeepSeek Harness usually means either trusting a one-shot import you cannot inspect, or rebuilding it by hand.
 
-Now covers import from 21 agents: Claude Code, Codex, ChatGPT, Cursor, Gemini, Antigravity CLI, Reasonix, opencode, MiMo Code, ZCode, Grok Build, OpenClaw, Pi Coding Agent, Hermes, Kimi CLI / Kimi Code, Kilo Code, Qoder CLI, WorkBuddy, Qwen Work CN (千问办公) and DSH session logs.
+This repository is secondary development on [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), which already reads 21 coding agents and writes real DSH sessions through the harness's own API. That entire codebase is kept. Two things are added: an export half that captures a Codex home into a portable, verifiable archive before DSH is involved, and seven fidelity fixes on the Codex path.
 
-Export back to: Claude Code, Codex, Kimi Code.
+The inherited import keeps working. Nothing here changes how it behaves.
 
-## Supported Agents
+## What this fork changes
 
-|  |  |  |  |  |  |
-| --- | --- | --- | --- | --- | --- |
-| [![Claude Code](./assets/agents/claude.svg)<br>**Claude Code**](https://github.com/anthropics/claude-code) | [![Codex](./assets/agents/codex.svg)<br>**Codex**](https://github.com/openai/codex) | [![ChatGPT](./assets/agents/chatgpt.svg)<br>**ChatGPT**](https://chatgpt.com) | [![Cursor](./assets/agents/cursor.svg)<br>**Cursor**](https://cursor.com) | [![Gemini](./assets/agents/gemini.svg)<br>**Gemini CLI**](https://github.com/google-gemini/gemini-cli) | [![Antigravity](./assets/agents/antigravity.svg)<br>**Antigravity CLI**](https://antigravity.google) |
-| [![Reasonix](./assets/agents/reasonix.svg)<br>**Reasonix**](https://github.com/esengine/DeepSeek-Reasonix) | [![OpenCode](./assets/agents/opencode.svg)<br>**OpenCode**](https://github.com/anomalyco/opencode) | [![MiMo Code](./assets/agents/mimocode.svg)<br>**MiMo Code**](https://github.com/XiaomiMiMo/MiMo-Code) | [![Kilo Code](./assets/agents/kilocode.svg)<br>**Kilo Code**](https://github.com/Kilo-Org/kilocode) | [![ZCode](./assets/agents/zcode.svg)<br>**ZCode**](https://z.ai) |  |
-| [![Grok Build](./assets/agents/grokbuild.svg)<br>**Grok Build**](https://github.com/xai-org/grok-build) | [![OpenClaw](./assets/agents/openclaw.svg)<br>**OpenClaw**](https://github.com/openclaw/openclaw) | [![Pi Coding Agent](./assets/agents/pi.svg)<br>**Pi Coding Agent**](https://github.com/badlogic/pi-mono) | [![Hermes](./assets/agents/hermes.svg)<br>**Hermes**](https://github.com/NousResearch/hermes-agent) | [![Kimi CLI](./assets/agents/kimi.svg)<br>**Kimi CLI**](https://github.com/MoonshotAI/kimi-cli) |  |
-| [![Qoder CLI](./assets/agents/qoder.svg)<br>**Qoder CLI**](https://github.com/qoderAI/qoder-cli) | [![WorkBuddy](./assets/agents/workbuddy.svg)<br>**WorkBuddy**](https://github.com/gabotechs/workbuddy) | [![Qwen Work CN](./assets/agents/qwen.svg)<br>**Qwen Work CN**](https://github.com/QwenLM/qwen-code) | [![DSH](./assets/agents/dsh.svg)<br>**DSH**](https://github.com/deepseek-ai/deepseek-harness) |  |  |
+Seven fixes, each traceable to a measurement or a read of the harness source. The reasoning behind each is in [docs/fork-plan.md](docs/fork-plan.md).
+
+| | Change | Why it was needed |
+|---|---|---|
+| **G1** | Codex `reasoning` records are kept | The readable part is 0.15% of the corpus and was discarded together with the ciphertext |
+| **G2** | The Codex `event_msg` channel is read | It was skipped wholesale, losing compaction and turn-abort signals |
+| **G3** | Codex compaction records are handled | Implemented for five other sources and missing for Codex |
+| **G4** | `~/.codex/archived_sessions/` is discovered | 398 rollouts on the test machine were unreachable |
+| **G5** | Current-generation DSH logs are readable | The pattern matched `session.jsonl.zstd` and not `session.v3.jsonl.zstd`, hiding **48 of 52** sessions |
+| **G6** | Unknown record types survive as `ignorable` events | DSH documents this as its compatibility mechanism; the Codex path did not use it |
+| **G7** | A recorded working directory can be remapped | A cross-machine archive lands ungrouped, by design |
+
+G5 is a defect in shipped behaviour with a one-line reproduction, and it affects most of any user's session store.
+
+## What is inherited
+
+The following is upstream's work, unchanged.
+
+**Import from 21 agents** — Claude Code, Codex, ChatGPT, Cursor, Gemini, Antigravity CLI, Reasonix, opencode, MiMo Code, ZCode, Grok Build, OpenClaw, Pi Coding Agent, Hermes, Kimi CLI and Kimi Code, Kilo Code, Qoder CLI, WorkBuddy, Qwen Work CN, DSH session logs, and content-detected local JSONL.
+
+**Export back** to Claude Code, Codex and Kimi Code.
+
+**Resumable sessions** — tool calls, results, titles, models and timestamps carry across, and the conversation continues from where the source stopped.
+
+**Bidirectional sync**, off by default, with sub-agent conversations filtered in both directions.
+
+**A batch panel** in the GUI, and 13 agent tools with three injection levels so low-frequency tools stay out of context.
 
 ## Install
 
 ```bash
-dsh plugin --profile web add dsh-chat-import                    # npm package
-dsh plugin --profile web add -w link:/path/to/dsh-chat-import   # local checkout (symlink)
+dsh plugin --profile web add -w link:/path/to/Codex-to-DSH-exporter
 ```
+
+The npm package name remains `dsh-chat-import`. This fork is not published to npm.
 
 ## Usage
 
-1. **Import** — pick the conversations to import from the "Import sessions" panel in the bottom-right of the GUI and import with one click, or have your agent call the context tool:
+Import from the "Import sessions" panel at the bottom right of the GUI, or have the agent call the tool:
 
 ```
+import_chat({ format: "codex", path: "~/.codex/sessions" })
 import_chat({ format: "claude", path: "~/.claude/projects" })
-import_chat({ format: "chatgpt", path: "~/Downloads/chatgpt-export/conversations.json" })
-import_chat({ format: "local-jsonl", path: "D:\downloads\session.jsonl" })
 ```
 
-Reasonix directory imports conservatively collapse only recovery ancestors proven by both a strict semantic prefix and an explicit `parent_id` lineage. Ambiguous or divergent files remain separate; use `lineageMode: "physical"` for one session per JSONL.
+Refresh the session list, open the imported conversation, and keep going.
 
-2. **Resume** — refresh the session list, open the imported session, and keep chatting from where the source left off.
+Every parameter, example and edge case is in [docs/USAGE.md](docs/USAGE.md).
 
-3. **Sync (optional)** — the panel's "Sync" tab offers bidirectional incremental sync, off by default. Sub-agent conversations are filtered out by default in both directions.
+## Status
 
-4. **Tool injection (optional)** — the "Session Import" settings section exposes three `injectTools` levels: **Minimal** (default, keeps only the `import_chat` entry tool resident; low-frequency management tools stay out of context), **Full** (all 13 tools), and **Off** (invisible to the agent; the GUI panel still works). Tool descriptions are slimmed down to selection-time essentials; behavioral details ride along in execution results and error text, only when needed.
+The inherited suite reports **688 pass, 27 fail**, here and on a clean checkout of upstream v0.11.3. Upstream's CI fails on `main` at the `npm test` step on every recent run. The failures are inherited, not introduced here, and are not yet fixed.
 
-Full tool / command usage (parameters, examples, edge cases) lives in **[docs/USAGE.md](docs/USAGE.md)**.
+At least one is a direct contradiction between code and test. `lib/import-core.mjs:261` deletes a cross-platform `cwd` so a session degrades to ungrouped rather than the entire import failing, and the comment says so, while the test asserts the Windows path survives.
 
-## Companion tool: config migration
-
-Only need to migrate **configuration** (skills, hooks, global settings) rather than conversation history? [dsh-movein](https://github.com/sjh9714/dsh-movein) handles config migration and complements this plugin -- DSH Chat Import only handles conversation history, and each tool works standalone. Its first-migration guide ([中文](https://github.com/sjh9714/dsh-movein/blob/main/docs/first-migration.zh.md)) walks through a preview-first, apply-second, verify-each-step flow.
-
-> The combined flow of the two tools has not been jointly validated, and cross-linking is not a mutual endorsement; check sources, targets, duplicate-import and retraction boundaries for each tool separately.
-
-This plugin's `import_agents` is a lightweight asset mover (it persists pi/opencode/Claude/Codex agents, prompts and skills as DSH skills); for full config migration (hooks, permission rules, settings), use dsh-movein.
-
-## Features
-
-| Capability | Entry points | Description |
-| --- | --- | --- |
-| Batch import | `import_chat` (20 formats) · `scan_discover` · sidebar panel | Import 19+ sources with one tool; each conversation becomes its own session |
-| Import history & purge | sidebar panel **History** tab | View `imports.json` records; remove plugin-created sessions (with confirmation) |
-| Full-fidelity resume | Imported sessions | Tool calls & results, reasoning, titles, models and timestamps carry over |
-| Export back | `export_chat` (`format: claude` / `codex` / `kimi`) | Serialize DSH sessions back to Claude / Codex / Kimi |
-| Bidirectional sync | panel "Sync" tab | Incremental sync in both directions (external ↔ DSH), off by default |
-
-> One documented exception to full fidelity: **failed ghost retry steps**. When a tool call never received its result and the very next step re-emits the same call id verbatim, the dead step is dropped at import — the result already pairs with the re-emitted call. Duplicate call ids in the imported log would hard-fail DSH's conversation folding (a second `start` for the same id), swallowing the whole trajectory after the first duplicate. See the `droppedRetrySteps` counter on the converter result.
+Treat **688 / 715** as the baseline. A change is not green because the suite is green.
 
 ## Docs
 
-| Document | Description |
-| --- | --- |
-| [Usage Reference](docs/USAGE.md) | Full parameters, examples and edge cases for every tool / command |
-| [Interchange protocol](docs/INTERCHANGE.md) | Interchange v1 protocol and bundle format |
-| [Changelog](CHANGELOG.md) | Version history |
-| [Roadmap](ROADMAP.md) | Shipped / planned |
-| [Contributing](CONTRIBUTING.md) | Development setup, commit rules, security & privacy |
+| Document | Contents |
+|---|---|
+| [docs/fork-plan.md](docs/fork-plan.md) | The seven changes, how the base was chosen, licence, upstreaming |
+| [docs/archive-format.md](docs/archive-format.md) | The export archive: layout, manifest, ledger, verification |
+| [docs/design.md](docs/design.md) | Scope, engineering contracts, prior art, limits |
+| [docs/mapping.md](docs/mapping.md) | Codex to DSH event mapping, and the invariants DSH enforces |
+| [docs/USAGE.md](docs/USAGE.md) | Upstream's tool and command reference |
+| [docs/INTERCHANGE.md](docs/INTERCHANGE.md) | Upstream's interchange protocol and bundle format |
+| [ROADMAP.md](ROADMAP.md) | Upstream's shipped and planned work |
 
-## Star History
+## Licence and credit
 
-[![Star History Chart](https://api.star-history.com/chart?repos=Nwflower/dsh-chat-import&type=date&legend=top-left&sealed_token=sAq09Z4DmwD843pzhg7azZtfXs8zW_Xij3fvCo3Ns1BGAgNeP_Zl1xU9YiUacS74_EzDXKHFpW3Bfj13ClcEMRzAhh4mVrl4a20ijURAGU_Oz6RROQYDYw)](https://www.star-history.com/?type=date&repos=Nwflower%2Fdsh-chat-import)
+MIT. The base is [`Nwflower/dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), Copyright (c) 2026 Nwflower and Scarlett. Both notices are preserved in [LICENSE](LICENSE), and the unmodified original is kept at [LICENSE.upstream](LICENSE.upstream). What was added and what was changed is recorded in [NOTICE](NOTICE).

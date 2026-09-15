@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Draw the repository banner.
 
-One idea, one dominant subject: a continuous fanfold printout — the
-accordion-folded, perforated-edge stationery a line printer consumes — running
-into a press whose output is a single dense sealed block. It stands for an
-append-only JSONL session log becoming a compact, portable artifact.
+One dominant subject: an open archive drawer seen from above, packed with filed
+cards, one card drawn up out of the row and standing proud. It stands for
+reading somebody else's on-disk sessions and taking a copy out into a portable,
+catalogued archive.
 
-The accordion is built from alternating shear: each sheet leans one way and
-its neighbour leans the other, joined by a slanted fold face. That alternation
-is what makes the strip read as folded rather than as a row of cards.
+Two supporting motifs: the coloured tabs along the card tops, and the round
+stamp on the drawn card.
 
-The medium is risograph: flat opaque ink, a faint misregistration ghost, paper
-grain, five inks. Drawn at 2x and downsampled so the edges stay clean.
+Medium is cut-paper collage — flat opaque shapes, visible cut edges, soft drop
+shadows. The palette and the treatment are deliberately unlike the screen-print
+banner used on this machine's previous repository, because two repositories
+should not look interchangeable.
 
 Run:  python3 scripts/draw_banner.py
 Out:  assets/banner.png
@@ -28,291 +29,226 @@ SCALE = 2
 WIDTH, HEIGHT = 2172, 724
 W, H = WIDTH * SCALE, HEIGHT * SCALE
 
-CREAM = (244, 238, 226)
-NAVY = (31, 58, 95)
-NAVY_MID = (48, 82, 126)
-NAVY_DEEP = (22, 43, 73)
-VERMILION = (210, 72, 46)
-SAGE = (124, 154, 110)
-MUSTARD = (217, 164, 65)
-PAPER = (250, 246, 236)
-PAPER_FOLD = (228, 219, 200)
+STONE = (239, 233, 224)
+STONE_DEEP = (222, 212, 197)
+PLUM = (74, 37, 69)
+PLUM_MID = (104, 58, 96)
+PLUM_DEEP = (52, 24, 48)
+CORAL = (232, 101, 79)
+CHARTREUSE = (185, 196, 60)
+CARD = (252, 249, 244)
+CARD_EDGE = (208, 197, 182)
 
-TICKS = (VERMILION, SAGE, MUSTARD, NAVY, VERMILION)
-TAB_COLOURS = (VERMILION, MUSTARD, SAGE, VERMILION)
+TABS = (CORAL, CHARTREUSE, PLUM_MID, CORAL, PLUM_MID)
+
+# Drawer box, and the lean that turns a flat rectangle into a shallow top-down view.
+DRAWER_L, DRAWER_R = 132.0, 1360.0
+DRAWER_T, DRAWER_B = 214.0, 656.0
+LEAN = 68.0
+CARDS = 13
+GAP = 6.0
+PULLED_INDEX = CARDS - 4
 
 OUT = Path(__file__).resolve().parent.parent / "assets" / "banner.png"
-
-
-def layer() -> Image.Image:
-    return Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
 
 def s(value: float) -> int:
     return int(round(value * SCALE))
 
 
+def layer() -> Image.Image:
+    return Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+
+def card_shape(x: float, y: float, w: float, h: float, lean: float) -> list[tuple[int, int]]:
+    """A card face: the top edge shifted sideways against the bottom edge."""
+    return [
+        (s(x + lean), s(y)),
+        (s(x + w + lean), s(y)),
+        (s(x + w), s(y + h)),
+        (s(x), s(y + h)),
+    ]
+
+
+def drop_shadow(canvas: Image.Image, shape: list[tuple[int, int]], offset: float, blur: float, alpha: int) -> None:
+    """A soft shadow beneath a cut shape, so the layers read as paper."""
+    shadow = layer()
+    ImageDraw.Draw(shadow).polygon(
+        [(x + s(offset), y + s(offset * 1.6)) for x, y in shape], fill=(58, 38, 30, alpha)
+    )
+    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(s(blur))))
+
+
 def paper_grain(image: Image.Image, strength: float = 6.0) -> Image.Image:
-    """Overlay grain without uniformly darkening the image."""
     noise = Image.effect_noise((W, H), strength).convert("L").filter(ImageFilter.GaussianBlur(0.5))
-    alpha = noise.point(lambda v: int(abs(v - 128) * 0.26))
-    overlay = Image.new("RGBA", (W, H), (90, 74, 52, 0))
-    overlay.putalpha(alpha)
+    overlay = Image.new("RGBA", (W, H), (92, 76, 54, 0))
+    overlay.putalpha(noise.point(lambda v: int(abs(v - 128) * 0.22)))
     return Image.alpha_composite(image, overlay)
 
 
-def parallelogram(x0: float, x1: float, y0: float, y1: float, shear: float) -> list[tuple[int, int]]:
-    """A sheet face: the top edge shifted horizontally against the bottom edge."""
-    return [(s(x0 + shear), s(y0)), (s(x1 + shear), s(y0)), (s(x1), s(y1)), (s(x0), s(y1))]
+def shadowed_polygon(canvas: Image.Image, shape: list[tuple[int, int]], fill, offset=8.0, blur=8.0, alpha=54, width=0, outline=None):
+    drop_shadow(canvas, shape, offset, blur, alpha)
+    ImageDraw.Draw(canvas).polygon(shape, fill=fill, outline=outline, width=width)
 
 
-def fold_face(left: tuple[float, float, float], right: tuple[float, float, float]) -> list[tuple[int, int]]:
-    """The turned edge joining two sheets. `left`/`right` are (x_edge, shear, _) triples."""
-    lx, lshear, _ = left
-    rx, rshear, _ = right
-    return [(s(lx + lshear), s(TOP)), (s(rx + rshear), s(TOP)), (s(rx), s(BOTTOM)), (s(lx), s(BOTTOM))]
+def draw_drawer(canvas: Image.Image) -> tuple[float, float]:
+    """The drawer box. Returns the x and width of the filing area."""
+    outer = [
+        (s(DRAWER_L + LEAN), s(DRAWER_T)),
+        (s(DRAWER_R + LEAN), s(DRAWER_T)),
+        (s(DRAWER_R), s(DRAWER_B)),
+        (s(DRAWER_L), s(DRAWER_B)),
+    ]
+    shadowed_polygon(canvas, outer, STONE_DEEP, offset=11, blur=10, alpha=52, width=s(4), outline=PLUM)
+
+    inset = 22.0
+    well = [
+        (s(DRAWER_L + LEAN + inset * 0.9), s(DRAWER_T + inset)),
+        (s(DRAWER_R + LEAN - inset), s(DRAWER_T + inset)),
+        (s(DRAWER_R - inset * 0.9), s(DRAWER_B - inset)),
+        (s(DRAWER_L + inset), s(DRAWER_B - inset)),
+    ]
+    ImageDraw.Draw(canvas).polygon(well, fill=PLUM_DEEP, outline=PLUM, width=s(2))
+    return DRAWER_L + inset + 6.0, DRAWER_R - DRAWER_L - inset * 2 - 14.0
 
 
-# --- geometry ---------------------------------------------------------------
+def draw_filed_cards(canvas: Image.Image, slot_x: float, slot_w: float) -> float:
+    """The packed cards, minus the one that will be drawn out. Returns its x."""
+    inner_t, inner_b = DRAWER_T + 38.0, DRAWER_B - 28.0
+    card_h = inner_b - inner_t
+    step = slot_w / CARDS
+    card_w = step - GAP
+    rng = random.Random(20260915)
 
-TOP, BOTTOM = 104.0, 622.0
-PANELS = 4
-PANEL_W = 250.0
-SHEAR = 30.0
-START_X = 70.0
-# Adjacent sheets lean opposite ways, so a uniform gap would make the fold
-# faces alternate between very narrow and very wide — one of them reading as a
-# blank page. Alternating the gap by twice the shear keeps every fold face the
-# same width while still letting the sheets lean against each other.
-GAP = 76.0
+    for index in range(CARDS):
+        x = slot_x + index * step
+        jitter = rng.uniform(-3.0, 3.0)
+        shape = card_shape(x, inner_t + jitter, card_w, card_h, LEAN)
 
-BLOCK_L, BLOCK_R = 1552.0, 2032.0
+        if index == PULLED_INDEX:
+            ImageDraw.Draw(canvas).polygon(shape, fill=PLUM_DEEP)
+            continue
 
+        shadowed_polygon(canvas, shape, CARD, offset=3, blur=3, alpha=48, width=s(1.5), outline=CARD_EDGE)
+        cd = ImageDraw.Draw(canvas)
 
-def panel_geometry() -> list[tuple[float, float, float]]:
-    """(x_start, x_end, shear) per sheet, with the lean alternating and the gap
-    compensating so all fold faces come out the same width."""
-    out = []
-    x = START_X
-    for index in range(PANELS):
-        out.append((x, x + PANEL_W, SHEAR if index % 2 == 0 else -SHEAR))
-        step = GAP + 2.0 * SHEAR if index % 2 == 0 else GAP - 2.0 * SHEAR
-        x += PANEL_W + step
-    return out
+        for row in range(7):
+            t = (row + 0.9) / 7.7
+            y = inner_t + jitter + card_h * t
+            at_y = LEAN * (1.0 - (y - inner_t) / card_h)
+            lx = x + card_w * 0.16 + at_y
+            cd.rounded_rectangle(
+                (s(lx), s(y), s(lx + card_w * rng.uniform(0.40, 0.70)), s(y + 2.6)),
+                radius=s(1.3),
+                fill=PLUM,
+            )
 
-
-def draw_sheet_body(canvas: Image.Image, ghost: Image.Image, x0: float, x1: float, shear: float, index: int) -> None:
-    """One sheet: face, ruled records, date tab, taxonomy ticks."""
-    face = parallelogram(x0, x1, TOP, BOTTOM, shear)
-
-    # Misregistration: a faint vermilion ghost of the outline, offset. This is
-    # the whole of the riso effect; anything stronger reads as a printing fault.
-    gd = ImageDraw.Draw(ghost)
-    gd.polygon([(x + s(3.5), y + s(3.5)) for x, y in face], outline=VERMILION, width=s(2.6))
-
-    cd = ImageDraw.Draw(canvas)
-    cd.polygon(face, fill=PAPER, outline=NAVY)
-
-    # Ruled lines, clipped to the leaning face so they stop at the edges.
-    inner = layer()
-    idraw = ImageDraw.Draw(inner)
-    margin = 26.0
-    rng = random.Random(900 + index * 13)
-    rows = 9
-    span = BOTTOM - TOP - 150.0
-    for row in range(rows):
-        y = TOP + 92.0 + row * (span / rows)
-        width_frac = rng.uniform(0.42, 0.96)
-        usable = PANEL_W - margin * 2
-        # Lines follow the lean, so they sit square inside the sheet.
-        at_y_shear = shear * (1.0 - (y - TOP) / (BOTTOM - TOP))
-        lx = x0 + margin + at_y_shear
-        idraw.rounded_rectangle(
-            (s(lx), s(y), s(lx + usable * width_frac), s(y + 4.5)),
-            radius=s(2),
-            fill=NAVY,
+        tab_w, tab_h = card_w * 0.46, 17.0
+        tab_x = x + (card_w - tab_w) / 2 + LEAN
+        cd.rectangle(
+            (s(tab_x), s(inner_t + jitter - tab_h), s(tab_x + tab_w), s(inner_t + jitter)),
+            fill=TABS[index % len(TABS)],
         )
 
-    # Date tab.
-    cx = x0 + margin + 20.0 + shear * 0.82
-    cy = TOP + 46.0
-    tab_r = 21.0
-    idraw.ellipse((s(cx - tab_r), s(cy - tab_r), s(cx + tab_r), s(cy + tab_r)), fill=TAB_COLOURS[index % 4])
-    idraw.ellipse(
-        (s(cx - tab_r), s(cy - tab_r), s(cx + tab_r), s(cy + tab_r)),
-        outline=NAVY,
-        width=s(2),
+    return slot_x + PULLED_INDEX * step
+
+
+def draw_pulled_card(canvas: Image.Image, x: float, card_w: float) -> None:
+    """One card drawn up out of the row, standing proud, carrying a stamp."""
+    face_w = card_w + 16.0
+    # Lifted straight up out of its slot: the bottom edge clears the filed row,
+    # the top rises well above the drawer. A card floating mid-air reads as a
+    # mistake rather than as a card being drawn.
+    lift = 156.0
+    bottom = DRAWER_B - 28.0 - lift
+    face_h = 452.0
+    top = bottom - face_h
+    shape = card_shape(x - 8.0, top, face_w, face_h, LEAN)
+
+    shadowed_polygon(canvas, shape, CARD, offset=15, blur=14, alpha=76, width=s(3), outline=PLUM)
+    cd = ImageDraw.Draw(canvas)
+
+    tab_w, tab_h = face_w * 0.52, 23.0
+    tab_x = x - 8.0 + (face_w - tab_w) / 2 + LEAN
+    cd.rectangle((s(tab_x), s(top - tab_h), s(tab_x + tab_w), s(top)), fill=CORAL)
+
+    rng = random.Random(7)
+    for row in range(14):
+        t = (row + 1.0) / 15.4
+        y = top + 74.0 + (face_h - 150.0) * t
+        at_y = LEAN * (1.0 - (y - top) / face_h)
+        lx = x + 8.0 + at_y
+        cd.rounded_rectangle(
+            (s(lx), s(y), s(lx + (face_w - 30.0) * rng.uniform(0.45, 0.88)), s(y + 3.0)),
+            radius=s(1.5),
+            fill=PLUM_MID if row % 3 else PLUM,
+        )
+
+    seal_r = 44.0
+    cx = x + face_w * 0.60 + LEAN * 0.45
+    cy = top + face_h - 92.0
+    cd.ellipse((s(cx - seal_r), s(cy - seal_r), s(cx + seal_r), s(cy + seal_r)), fill=CHARTREUSE)
+    cd.ellipse(
+        (s(cx - seal_r + 7), s(cy - seal_r + 7), s(cx + seal_r - 7), s(cy + seal_r - 7)),
+        outline=PLUM, width=s(2.4),
+    )
+    cd.ellipse(
+        (s(cx - seal_r + 17), s(cy - seal_r + 17), s(cx + seal_r - 17), s(cy + seal_r - 17)),
+        outline=PLUM, width=s(1.4),
     )
 
-    # Taxonomy ticks along the foot of the sheet.
-    tick_y = BOTTOM - 44.0
-    at_y_shear = shear * (1.0 - (tick_y - TOP) / (BOTTOM - TOP))
-    for tick_index, colour in enumerate(TICKS):
-        tx = x0 + margin + tick_index * 30.0 + at_y_shear
-        idraw.rectangle((s(tx), s(tick_y), s(tx + 17), s(tick_y + 13)), fill=colour)
 
-    mask = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(mask).polygon(face, fill=255)
-    canvas.alpha_composite(Image.composite(inner, layer(), mask))
-
-
-def draw_folds(canvas: Image.Image, geometry: list[tuple[float, float, float]]) -> None:
-    """The turned edges, shaded so the strip reads as one folded ribbon."""
-    for index in range(len(geometry) - 1):
-        _, x_end, shear = geometry[index]
-        x_next, _, shear_next = geometry[index + 1]
-
-        face = fold_face((x_end, shear, 0), (x_next, shear_next, 0))
-
-        # Fill the turned edge with a vertical gradient so it reads as a face
-        # catching less light than the sheets beside it.
-        shade = layer()
-        sd = ImageDraw.Draw(shade)
-        steps = 60
-        for step in range(steps):
-            t = step / steps
-            y = TOP + t * (BOTTOM - TOP)
-            band = PAPER_FOLD if index % 2 == 0 else (216, 206, 186)
-            value = tuple(int(channel * (1.0 - 0.10 * t)) for channel in band)
-            sd.rectangle((face[0][0], s(y), face[2][0], s(y + (BOTTOM - TOP) / steps) + 1), fill=value)
-        mask = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(mask).polygon(face, fill=255)
-        canvas.alpha_composite(Image.composite(shade, layer(), mask))
-
-        cd = ImageDraw.Draw(canvas)
-        cd.line([face[0], face[1]], fill=NAVY, width=s(2))
-        cd.line([face[3], face[2]], fill=NAVY, width=s(2))
-
-        # A crease down the middle of each turned edge.
-        mid = [
-            ((face[0][0] + face[1][0]) // 2, face[0][1]),
-            ((face[3][0] + face[2][0]) // 2, face[3][1]),
-        ]
-        cd.line(mid, fill=NAVY, width=s(1.6))
-
-    # Punched feed holes along the top edge, following the lean of each sheet.
+def draw_outflow(canvas: Image.Image) -> None:
+    """The copy leaving the drawer, and the sealed archive it becomes."""
+    mid_y = (DRAWER_T + DRAWER_B) / 2.0
+    start_x = DRAWER_R + LEAN + 6.0
+    end_x = 1806.0
     cd = ImageDraw.Draw(canvas)
-    for x0, x1, shear in geometry:
-        for step in range(11):
-            t = step / 10.0
-            x = x0 + 14.0 + t * (PANEL_W - 28.0) + shear
-            y = TOP - 15.0
-            r = 4.2
-            cd.ellipse((s(x - r), s(y - r), s(x + r), s(y + r)), fill=CREAM, outline=NAVY, width=s(1.6))
 
-
-def draw_feed(canvas: Image.Image, geometry: list[tuple[float, float, float]]) -> None:
-    """A tapered ribbon carrying the strip into the press."""
-    _, x_last, shear_last = geometry[-1]
-    start_x = x_last + shear_last + 10.0
-    mid_y = (TOP + BOTTOM) / 2.0
-    end_x = BLOCK_L - 42.0
-
-    cd = ImageDraw.Draw(canvas)
-    steps = 24
-    top_edge: list[tuple[int, int]] = []
-    bottom_edge: list[tuple[int, int]] = []
+    steps = 22
+    top_edge, bottom_edge = [], []
     for step in range(steps + 1):
         t = step / steps
         x = start_x + t * (end_x - start_x)
-        half = 74.0 * (1.0 - t) + 15.0 * t
+        half = 46.0 * (1.0 - t) + 34.0 * t
         top_edge.append((s(x), s(mid_y - half)))
         bottom_edge.append((s(x), s(mid_y + half)))
-    cd.polygon(top_edge + list(reversed(bottom_edge)), fill=NAVY_MID)
+    ribbon = top_edge + list(reversed(bottom_edge))
+    shadowed_polygon(canvas, ribbon, PLUM, offset=6, blur=6, alpha=42)
 
-    # Rungs: the ribbon is the same log, still readable at this point.
-    for step in range(1, 11):
-        t = step / 11.0
+    for step in range(1, 9):
+        t = step / 9.0
         x = start_x + t * (end_x - start_x)
-        half = (74.0 * (1.0 - t) + 15.0 * t) * 0.86
-        cd.line([(s(x), s(mid_y - half)), (s(x), s(mid_y + half))], fill=PAPER, width=s(2))
+        half = (46.0 * (1.0 - t) + 34.0 * t) * 0.80
+        cd.line([(s(x), s(mid_y - half)), (s(x), s(mid_y + half))], fill=STONE, width=s(2.4))
 
+    w, h = 178.0, 392.0
+    sealed = [
+        (s(end_x), s(mid_y - h / 2)),
+        (s(end_x + w), s(mid_y - h / 2)),
+        (s(end_x + w), s(mid_y + h / 2)),
+        (s(end_x), s(mid_y + h / 2)),
+    ]
+    shadowed_polygon(canvas, sealed, PLUM_MID, offset=9, blur=8, alpha=54, width=s(2), outline=PLUM)
+    for row in range(12):
+        y = mid_y - h / 2 + 26.0 + row * ((h - 60.0) / 11.0)
+        cd.rounded_rectangle((s(end_x + 26), s(y), s(end_x + w - 26), s(y + 4.0)), radius=s(2), fill=STONE_DEEP)
 
-def draw_block(canvas: Image.Image) -> None:
-    """The sealed output: the same material, compressed."""
-    cd = ImageDraw.Draw(canvas)
-
-    # Intake teeth, drawing the ribbon in.
-    teeth = 30
-    tooth_h = (BOTTOM - TOP) / teeth
-    for index in range(teeth):
-        y = TOP + index * tooth_h
-        length = 34.0 * (0.5 + 0.5 * ((index % 3) / 2.0))
-        cd.polygon(
-            [
-                (s(BLOCK_L - length), s(y + tooth_h * 0.16)),
-                (s(BLOCK_L), s(y)),
-                (s(BLOCK_L), s(y + tooth_h * 0.84)),
-                (s(BLOCK_L - length), s(y + tooth_h)),
-            ],
-            fill=VERMILION if index % 2 == 0 else NAVY,
-        )
-
-    cd.rounded_rectangle(
-        (s(BLOCK_L), s(TOP), s(BLOCK_R), s(BOTTOM)),
-        radius=s(8),
-        fill=NAVY,
-        outline=NAVY,
-        width=s(2),
-    )
-
-    rng = random.Random(20260915)
-    bands = 62
-    band_h = (BOTTOM - TOP) / bands
-    for index in range(bands):
-        y = TOP + index * band_h
-        cd.rectangle(
-            (s(BLOCK_L + 3), s(y + 0.8), s(BLOCK_R - 3), s(y + band_h - 0.8)),
-            fill=rng.choice([NAVY, NAVY, NAVY_MID, NAVY_DEEP]),
-        )
-
-    for fraction, colour in ((0.19, VERMILION), (0.48, MUSTARD), (0.74, SAGE)):
-        y = TOP + (BOTTOM - TOP) * fraction
-        cd.rectangle((s(BLOCK_L + 3), s(y), s(BLOCK_R - 3), s(y + band_h * 1.8)), fill=colour)
-
-    # Perforated edges of the sealed block.
-    for y in (TOP + 9.0, BOTTOM - 9.0):
-        for step in range(30):
-            x = BLOCK_L + 12.0 + step * ((BLOCK_R - BLOCK_L - 24.0) / 29.0)
-            r = 3.2
-            cd.ellipse((s(x - r), s(y - r), s(x + r), s(y + r)), fill=PAPER)
-
-    # The seal.
-    seal_r = 50.0
-    scx, scy = BLOCK_R - 52.0, BOTTOM - 52.0
-    cd.ellipse((s(scx - seal_r), s(scy - seal_r), s(scx + seal_r), s(scy + seal_r)), fill=CREAM, outline=VERMILION, width=s(4.6))
+    seal_r = 46.0
+    cx, cy = end_x + w / 2, mid_y + h / 2 - 62.0
+    cd.ellipse((s(cx - seal_r), s(cy - seal_r), s(cx + seal_r), s(cy + seal_r)), fill=CHARTREUSE)
     cd.ellipse(
-        (s(scx - seal_r + 14), s(scy - seal_r + 14), s(scx + seal_r - 14), s(scy + seal_r - 14)),
-        outline=VERMILION,
-        width=s(2.4),
+        (s(cx - seal_r + 8), s(cy - seal_r + 8), s(cx + seal_r - 8), s(cy + seal_r - 8)),
+        outline=PLUM, width=s(2.2),
     )
 
 
 def draw_banner() -> Image.Image:
-    base = Image.new("RGBA", (W, H), CREAM + (255,))
-    geometry = panel_geometry()
-
-    ghost = layer()
-    # Folds first, then sheets on top, so the near sheet always wins the edge.
-    folds = layer()
-    draw_folds(folds, geometry)
-
-    sheets = layer()
-    for index, (x0, x1, shear) in enumerate(geometry):
-        draw_sheet_body(sheets, ghost, x0, x1, shear, index)
-
-    feed = layer()
-    draw_feed(feed, geometry)
-
-    block = layer()
-    draw_block(block)
-
-    base = Image.alpha_composite(base, ghost.filter(ImageFilter.GaussianBlur(0.5)))
-    base = Image.alpha_composite(base, folds)
-    base = Image.alpha_composite(base, feed)
-    base = Image.alpha_composite(base, sheets)
-    base = Image.alpha_composite(base, block)
-
+    base = Image.new("RGBA", (W, H), STONE + (255,))
+    slot_x, slot_w = draw_drawer(base)
+    pulled_x = draw_filed_cards(base, slot_x, slot_w)
+    draw_pulled_card(base, pulled_x, slot_w / CARDS - GAP)
+    draw_outflow(base)
     return paper_grain(base).convert("RGB").resize((WIDTH, HEIGHT), Image.LANCZOS)
 
 
