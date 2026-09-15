@@ -212,59 +212,92 @@ The loader writes the extracted text to `AGENTS.codex.md` and prints a diff
 against the target `~/.dsh/AGENTS.md`. It does not touch that file. A tool that
 rewrites a file the person maintains is worse than no tool.
 
-### 5.7 `rules/default.rules` — the honest mapping
+### 5.7 `rules/default.rules` — a matcher table and a shipped answerer
 
-This is the one surface where the destination cannot represent the source, and
-the reason is structural rather than a gap in the loader.
+**Correction.** An earlier revision of this document stated that DSH has no
+destination for per-command approval and that Codex's allow-list could only be
+compressed into coarse presets. That was wrong. It came from checking
+`permission-presets` and `user-approval`'s policy vocabulary and stopping there,
+without following the approval request to its answerer chain.
 
-Codex's file is a per-command allow-list:
-
-```
-prefix_rule(pattern=["git", "pull"], decision="allow")
-```
-
-DSH's entire permission space is:
+The mechanism exists. `ApprovalService.request()` does not decide; it asks the
+**composed answerers**:
 
 ```
-SandboxMode    = 'read-only' | 'workspace-write' | 'danger-full-access'
-ApprovalPolicy = 'ask' | 'never'
-PresetSpec     = { sandbox, approval, name?, description? }
+OUTCOMES = ['allowed-once', 'rejected', 'cancelled', 'unavailable']
 ```
 
-Six combinations. A preset says *"in this sandbox, ask about everything or ask
-about nothing"*. There is no destination for *"`git pull` is pre-approved and
-`rm` is not"*.
+and the contract says `'allowed-once'` is the only grant. A composed answerer
+receives the tool identity and the reason, and either grants, rejects, or
+abstains. An abstention falls through to the interactive prompt.
 
-So the classification stage's job on this surface is not translation. It is
-**semantic compression**: read the allow-list, infer the posture it encodes, and
-propose a small number of custom presets.
+That makes the mapping nearly one-to-one:
+
+| Codex | DSH |
+|---|---|
+| `prefix_rule(pattern=["git","pull"], decision="allow")` | the answerer matches the command prefix and returns `'allowed-once'` |
+| no rule matches | the answerer abstains → the interactive prompt → **the command asks** |
+
+So "git pull is pre-approved and rm is not" is expressible, and expressing it
+does not require inventing anything.
+
+#### The shape
+
+Two artefacts, not one.
+
+**A matcher table**, translated from the source rules:
 
 ```json
 {
-  "surface": "rules",
-  "proposedPreset": {
-    "id": "codex-imported",
-    "sandbox": "workspace-write",
-    "approval": "ask",
-    "name": "Codex-imported posture",
-    "description": "Sandboxed writes with per-command approval. The source pre-approved 70 commands; DSH cannot express per-command approval, so this asks."
-  },
-  "lossy": true,
-  "evidence": "68 of 70 rules allow read-only inspection, package installation and git reads; 2 allow `softwareupdate --fetch-full-installer`",
-  "unrepresentable": ["per-command approval granularity"]
+  "version": 1,
+  "source": "~/.codex/rules/default.rules",
+  "rules": [
+    { "id": "r001", "kind": "argv-prefix", "argv": ["git", "pull"], "decision": "allowed-once",
+      "source": "prefix_rule(pattern=[\"git\", \"pull\"], decision=\"allow\")" }
+  ],
+  "unmapped": [
+    { "source": "prefix_rule(pattern=[\"/bin/zsh\", \"-lc\", \"…\"], decision=\"allow\")",
+      "reason": "shell-wrapped form; the argv the matcher sees is the wrapper, not the wrapped command" }
+  ]
 }
 ```
 
-Every proposal on this surface carries `"lossy": true` and a non-empty
-`unrepresentable` list. The loader also writes the original allow-list to
-`rules/codex-prefix-rules.txt` so the information survives in a readable form
-even though DSH cannot act on it.
+**A shipped plugin** that composes an answerer reading that table. The plugin is
+part of this program, not generated: the translation target should be a fixed,
+reviewable interface rather than per-import generated code.
 
-**A note on what this loses.** If a person relied on those 70 rules to avoid
-approval prompts without granting full access, that convenience does not
-transfer. The options are `approval: 'ask'` and answer the prompts, or `'never'`
-within a sandbox mode and lose the guardrail. The proposal states this rather
-than picking for them.
+#### What the agent does here
+
+Not semantic compression. Two narrower jobs, both of which need judgement:
+
+1. **Translating the match semantics.** Codex's rules are argv-prefix matches,
+   but the source mixes direct forms (`["ps","-p"]`) with shell-wrapped forms
+   (`["/bin/zsh","-lc","<whole command>"]`). Deciding which form a given rule is,
+   and what the matcher will actually see, is a reading task.
+2. **Deciding what is unmappable.** A rule whose pattern is a shell wrapper with
+   an embedded command string cannot be matched by argv prefix against the
+   command the harness sees. It belongs in `unmapped` with a reason, not
+   silently mistranslated into a rule that never fires.
+
+#### Two constraints to state plainly
+
+**The session policy must be `ask`.** Policy is applied *before* answerers:
+`'never'` resolves every ask to `'rejected'` deterministically without consulting
+them. A home running `'never'` gets no benefit from this table — the answerer
+never runs. On this machine's own sessions the policy is `'never'`, so the
+imported table is inert until that changes.
+
+**A full-access sandbox rarely asks.** Under `danger-full-access` few operations
+raise a request at all, so there may be nothing for the answerer to decide. The
+table is a guardrail that becomes meaningful when the sandbox is narrowed, and
+the loader should say so rather than implying the imported rules are doing work.
+
+Both constraints are recorded as `unmapped`-with-reason entries in the manifest
+when the target home does not satisfy them.
+
+The original allow-list is also written to `rules/codex-prefix-rules.txt`
+verbatim, so the source survives readably regardless of what the table
+translates.
 
 ## 6. Verification
 
