@@ -21,7 +21,7 @@ a lossy projection of it, and once you have only the projection you cannot
 recover what the projection dropped. The archive keeps the source.
 
 **Tier decisions belong downstream.** Measured on a uniform random sample of
-200 rollouts: telemetry is 14.8% of corpus bytes, `compacted` replacement text
+200 rollouts: telemetry is 14.8% of corpus bytes, `compacted` records
 13.2%, and reasoning 7.0% of which 84.1% is ciphertext opaque outside OpenAI's
 systems. Whether to carry those is a judgement the importer should make, per
 destination and per user. Baking a tier into the export forecloses it.

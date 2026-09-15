@@ -44,7 +44,7 @@ is not. This is re-indexing, not loss.
 
 **DSH has no vocabulary for several Codex record types.** Measured shares of a
 uniform random sample of 200 rollouts: `event_msg/item_completed` 11.9% of
-bytes, `event_msg/token_count` 2.8%, `compacted` replacement text 13.2%.
+bytes, `event_msg/token_count` 2.8%, and `compacted` records 13.2%.
 
 The first two are droppable. The third is content.
 

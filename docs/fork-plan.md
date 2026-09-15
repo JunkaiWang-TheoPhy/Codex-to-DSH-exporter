@@ -89,7 +89,20 @@ turn-abort signals, which are the two that change how a session reads.
 ### G3 — Codex `compacted` is not handled
 
 Compaction handling exists for Claude, opencode, Pi, Kimi and ZCode, and not for
-Codex. `compacted` replacement text is **13.2%** of corpus bytes.
+Codex. `compacted` records are **13.2%** of corpus bytes.
+
+**Correction.** An earlier revision of this document described the record as
+carrying a `replacement_text` string. That field does not exist. It was invented
+in this repository's own synthetic fixture and then treated as observed. Measured
+over 102 real `compacted` records: `replacement_text` appears **zero** times;
+`replacement_history` is an array of complete message records in **102 of 102**,
+`message` is empty in **102 of 102**, and window metadata
+(`window_number`, `window_id`, `compaction_response_id`,
+`latest_token_usage_record`) is present in most.
+
+So the semantics are a compaction *window* — earlier turns replaced by
+`replacement_history` — not a summary string. That makes the Codex change larger
+than the "add one branch" this document originally implied.
 
 ### G4 — `~/.codex/archived_sessions/` is not discovered
 

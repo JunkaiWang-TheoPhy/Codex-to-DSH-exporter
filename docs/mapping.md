@@ -277,7 +277,7 @@ Measured on the same uniform random sample, as a share of corpus bytes:
 |---|---|---|---|---|
 | Narrative | messages, tool calls and outputs, turn and step boundaries, context, `session_meta` | 59.9% | 22.8 GB | **5.3 GB** |
 | Narrative + readable reasoning | the above plus `content` and `summary` | 60.1% | 22.8 GB | **5.3 GB** |
-| Everything except telemetry | the above plus `compacted` replacement text and unmodelled records | 79.9% | 30.4 GB | 7.1 GB |
+| Everything except telemetry | the above plus `compacted` records and unmodelled records | 79.9% | 30.4 GB | 7.1 GB |
 
 Two figures drive the choice, and neither is the one an early measurement of
 this corpus suggested:
