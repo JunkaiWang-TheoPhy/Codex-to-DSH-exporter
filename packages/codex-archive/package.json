@@ -9,19 +9,24 @@
     "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh-exporter.git",
     "directory": "packages/codex-archive"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.mjs",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
+    ".": "./src/index.mjs",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "codex-archive": "bin/codex-archive.mjs"
+  },
   "files": [
-    "dist"
+    "src",
+    "bin",
+    "README.md"
   ],
   "engines": {
     "node": ">=22.15.0"
-  }
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "//": "Zero build. Sources are plain ESM under src/; there is no dist/ and no compile step. The repository convention is zero-build ESM, and this package needs nothing compiled: node:fs, node:crypto, node:zlib and node:test are the whole dependency set. engines>=22.15.0 is required for the built-in zstd; detectCompression() degrades to no compression and records that in the manifest rather than silently substituting another format."
 }
