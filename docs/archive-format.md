@@ -120,7 +120,8 @@ in `notCaptured`.**
       "sourcePath": "sessions/2026/08/14/rollout-2026-08-14T23-42-57-019f0000-....jsonl",
       "sourceBytes": 74729,
       "sourceSha256": "…64 hex…",
-      "archiveBytes": 18344
+      "archiveBytes": 18344,
+      "storedSha256": "…64 hex…"
     }
   ],
   "notCaptured": [
@@ -138,11 +139,29 @@ Four fields carry weight beyond bookkeeping:
   importer may group by.
 - **`sourceSha256`** is the digest of the original bytes. This is what makes the
   archive evidentiary rather than a copy of unknown provenance.
+- **`storedSha256`** is the digest of the bytes as stored — the compressed stream,
+  for a session artifact. Required, not optional; §6.1 explains the measured
+  failure that forces a second digest.
 - **`machine` is `null` by default.** A hostname or user path is machine-specific
   and belongs in the archive only on explicit request; `docs/` in this repository
   follows the same rule.
 - **`notCaptured`** is mandatory and must be non-empty. An export that silently
   omits `auth.json` and the SQLite state is worse than one that says so.
+
+Two fields are additions beyond this document's original layout, both recorded
+rather than assumed:
+
+- **`compression`** — the physical encoding of the **session** artifacts
+  (`zstd` | `none`). Environment files are always plain UTF-8 and carry no
+  suffix. A verifier must decide per entry from the stored path; applying this
+  flag to environment files would decompress plain text. A degraded run on a
+  Node build without built-in zstd records `none` here instead of substituting a
+  different format silently.
+- **`limit`-bounded runs** — an export may be asked to take at most *n*
+  rollouts. The result is a valid **partial** archive, not a corrupt one: the
+  manifest states what was taken, and the ledger stays consistent. This is the
+  only practical way to check an export end to end before committing 38 GB to
+  it.
 
 ## 4. `ledger.json` — resumability
 
@@ -189,11 +208,45 @@ a test: the suite asserts the source tree is byte-identical after an export.
 
 ## 6. Verification
 
-`verify` walks the manifest and, for every entry, recomputes the digest of the
-stored bytes and compares it against `sourceSha256` after decompression. It
-reports per-entry verdicts and exits non-zero on any failure.
+`verify` walks the manifest and, for every entry, recomputes two digests of the
+stored artifact and compares each against what the manifest recorded. It reports
+per-entry verdicts and exits non-zero on any failure.
 
-Three checks beyond per-file integrity:
+### 6.1 Why two digests
+
+This section exists because one digest was tried first and was measured to be
+insufficient.
+
+`sourceSha256` is taken after decompression, so it answers *does the archive hold
+the original bytes*. `storedSha256` is taken over the bytes on disk, so it answers
+*is the archive the file that was written*. Recomputing the first is what a
+compression-aware verifier does naturally, and it leaves a hole: Node's zstd
+decoder **accepts trailing bytes**. Appending one byte to a frame still
+decompresses to byte-identical plaintext, so a verifier that only compares the
+decompressed digest reports success on a file that has been appended to. The
+suite's tamper case is exactly that append, and it fails if the stored-digest
+check is removed.
+
+The stored digest cannot be derived from the source by re-compressing. zstd output
+depends on chunk boundaries: the same plaintext compressed in one write and in
+64 KiB writes produces frames of different lengths (measured, 31,758 vs 30,699
+bytes for a ~1.1 MB input). It has to be recorded when the bytes are written, which
+is why `storedSha256` is a required manifest field rather than an optional extra.
+
+### 6.2 The derived layer
+
+`normalized.jsonl` is not evidence, and it is still checked. The manifest records
+`normalizedSha256` for each session, and verification recomputes it, so a derived
+layer that has been edited or deleted is reported rather than silently consumed by
+an importer.
+
+It is rebuilt on every run, including when the source artifact is reused. The
+classifier is code and the rollout is data, so `(bytes, mtime)` — the pair that
+decides source reuse — cannot tell whether the IR is current. Before this was
+fixed, changing the classifier left an archive holding IR produced by the previous
+version, with nothing about the archive looking wrong.
+
+Three further checks:
 
 1. **Completeness.** Every session directory contains a source file. A directory
    with only `normalized.jsonl` fails.

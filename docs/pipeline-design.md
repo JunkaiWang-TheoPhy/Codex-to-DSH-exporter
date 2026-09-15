@@ -42,7 +42,9 @@ recorded; neither is silent.
 Read-only on the Codex home, byte-identical guarantee, asserted by the suite.
 
 Produces the archive specified in `docs/archive-format.md`. Nothing in this
-stage needs a decision except credential refusal.
+stage needs a decision except credential refusal. **Implemented** in
+`packages/codex-archive`; the table below is what the code does, and each row has
+a test.
 
 | Surface | Handling |
 |---|---|
@@ -50,6 +52,20 @@ stage needs a decision except credential refusal.
 | `AGENTS.md`, `config.toml`, `hooks.json`, `rules/` | byte-exact copy |
 | `skills/`, `prompts/`, `agents/` | byte-exact directory copies |
 | `auth.json`, `*.sqlite`, `logs/` | **not copied**; recorded in `notCaptured` with a reason |
+
+Three things the implementation added beyond this table, each because a
+measurement forced it:
+
+- **`--limit n`** takes a bounded sample. A 38 GB corpus is not the way to check
+  an export end to end, and a limited run is a valid partial archive rather than a
+  corrupt one.
+- **`compression` in the manifest**, because a Node build without built-in zstd
+  degrades to no compression, and a degraded run must be visible rather than
+  silent.
+- **A second digest per entry**, over the stored bytes rather than the original.
+  `docs/archive-format.md` §6.1 has the measurement; the short version is that
+  Node's zstd decoder accepts trailing bytes, so a digest taken after decompression
+  reports success on a file that has been appended to.
 
 ## 4. Stage 2 — classify
 
