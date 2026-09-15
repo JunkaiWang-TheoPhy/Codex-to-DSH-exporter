@@ -45,6 +45,17 @@ export interface ArchiveEntry {
    * be recorded at write time.
    */
   readonly storedSha256: string;
+  /**
+   * Digest of the derived `normalized.jsonl` for a session entry, if one was
+   * written.
+   *
+   * Present only on `session` entries. It exists because the derived layer is
+   * rebuilt on every run — the classifier is code and the rollout is data, so
+   * `(bytes, mtime)` cannot tell whether the IR is up to date — and a layer that
+   * is rebuilt every run is a layer whose presence and content can be checked
+   * for free.
+   */
+  readonly normalizedSha256?: string;
 }
 
 /** Something the export deliberately did not take. */
