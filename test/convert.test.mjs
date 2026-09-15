@@ -487,13 +487,13 @@ test('convertCodexJsonl: function_call + function_call_output 按 call_id 跨行
   assertMessageOrderLegal(out.events)
 })
 
-test('convertCodexJsonl: 注入块被过滤、reasoning 加密被跳过、custom_tool_call 用 input', () => {
+test('convertCodexJsonl: 注入块被过滤、无 summary 的 reasoning 不产生块、custom_tool_call 用 input', () => {
   const out = convertCodexJsonl(load('codex-custom-tool.jsonl'))
   assert.equal(out.turns.length, 1)
   // 注入的 <environment_context> 不进入 prompt
   const user = out.events.find((e) => e.type === 'user/message' && e.data.source.kind === 'user').data
   assert.equal(user.content[0].text, '帮我修这个 bug')
-  // 加密 reasoning 不产生 reasoning 块
+  // reasoning 的 summary 为空 → 不产生 reasoning 块，也不塞空文本（密文 encrypted_content 不读）
   assert.equal(out.events.filter((e) => e.type === 'assistant/message').length, 2)
   const asst = out.events.filter((e) => e.type === 'assistant/message').map((e) => e.data.message)
   for (const m of asst) {
@@ -754,6 +754,33 @@ test('jsObjectLiteralToJson: 不支持的结构返回 null（尾逗号 / 注释 
   // 支持的结构正常输出（含前导小数点数字 .5）
   assert.equal(jsObjectLiteralToJson('{}'), '{}')
   assert.equal(jsObjectLiteralToJson('{a: [], b: {c: "d"}, e: -1.5, f: 1e3, g: .5}'), '{"a":[],"b":{"c":"d"},"e":-1.5,"f":1000,"g":0.5}')
+})
+
+// codex：event_msg/turn_aborted 表示该回合被用户中断。实测 40 条真实记录里 reason 恒为
+// 'interrupted'，不区分用户 / hook / 销毁，故映射为宿主为「导入且原始粗粒度记录未携带
+// 原因」预留的 legacy 原因，而不是臆测一个更具体的原因。
+test('codex：turn_aborted 标为该回合中断，后续回合不受影响', () => {
+  const out = convertCodexJsonl(load('codex-turn-aborted.jsonl'))
+  const ends = out.events.filter((e) => e.type === 'turn/end').map((e) => e.data.reason)
+  assert.equal(ends.length, 2)
+  assert.deepEqual(ends[0], { kind: 'aborted', reason: { kind: 'legacy' } })
+  assert.deepEqual(ends[1], { kind: 'completed' }, '中断只影响它所在的回合')
+})
+
+test('codex：没有 turn_aborted 时回合照常标记完成', () => {
+  const out = convertCodexJsonl(load('codex-simple.jsonl'))
+  const ends = out.events.filter((e) => e.type === 'turn/end').map((e) => e.data.reason)
+  assert.deepEqual(ends, [{ kind: 'completed' }])
+})
+
+// 生产导入恒走预算裁剪（resolveImportBudget 恒返回数字），因此「中断标记」必须在裁剪后
+// 仍然存在：trimTurns 的 L1 克隆只取 { prompt, steps } 时会把 aborted 丢掉，被裁的会话
+// 会静默变回「正常完成」——这里用与生产同口径的 budget 参数锁定该不变量。
+test('codex：走预算裁剪后仍标 aborted（裁剪不得丢掉回合级标记）', () => {
+  const raw = load('codex-turn-aborted.jsonl')
+  const budgeted = convertCodexJsonl(raw, { budget: 550000 })
+  const ends = budgeted.events.filter((e) => e.type === 'turn/end').map((e) => e.data.reason)
+  assert.deepEqual(ends, [{ kind: 'aborted', reason: { kind: 'legacy' } }, { kind: 'completed' }])
 })
 
 // ---- ChatGPT 网页导出 conversations.json ----
@@ -2191,4 +2218,40 @@ test('所有源的 assistant/message 都带 settlement 字段 stream（issue #41
       assert.ok(Array.isArray(ev.data.stream), name + ' assistant/message 带 stream 数组')
     }
   }
+})
+
+// codex reasoning：可读部分在 summary 块里（实测 81 条真实记录：content 恒为 null，
+// summary 是 [{type:'summary_text',text}] 数组）。encrypted_content 是不透明密文
+// （占 reasoning 的 85.2%），既不读也不搬。
+test('codex：reasoning 的 summary 块转成 reasoning 内容块，密文不进产物', () => {
+  const out = convertCodexJsonl(load('codex-reasoning.jsonl'))
+  const steps = out.turns.flatMap((t) => t.steps)
+  const blocks = steps.flatMap((s) => s.content).filter((c) => c.type === 'reasoning')
+  assert.equal(blocks.length, 2)
+  assert.equal(blocks[0].text, '**Planning a project structure scan**')
+  // 同一条记录里的多个 summary 块按序合并
+  assert.equal(blocks[1].text, '**Reading the manifest**\n**Then listing the tree**')
+  // reasoning 出现在其所属 assistant 步骤之前，必须并入该步而非另开一步
+  assert.equal(steps.length, 1, 'reasoning 不得自开一步')
+  assert.equal(out.messages, 2, 'messages 不得因 reasoning 虚增')
+  assert.equal(out.turns.length, 1)
+  // 密文绝不出现
+  assert.ok(!JSON.stringify(out).includes('fixture-blob'), 'encrypted_content 不得进入转换产物')
+})
+
+test('codex：无 summary 的 reasoning 不产生空块，也不自开步骤', () => {
+  const recs = [
+    '{"timestamp":"2026-05-18T13:21:30.751Z","type":"session_meta","payload":{"id":"x","cwd":"/p"}}',
+    '{"timestamp":"2026-05-18T13:21:30.754Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}}',
+    '{"timestamp":"2026-05-18T13:21:31.000Z","type":"response_item","payload":{"type":"reasoning","id":"r","summary":[],"encrypted_content":"gAAAAAB-fixture-blob-3"}}',
+    '{"timestamp":"2026-05-18T13:21:31.100Z","type":"response_item","payload":{"type":"reasoning","id":"r2","encrypted_content":"gAAAAAB-fixture-blob-4"}}',
+    '{"timestamp":"2026-05-18T13:21:32.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}',
+  ].join('\n')
+  const out = convertCodexJsonl(recs)
+  const steps = out.turns.flatMap((t) => t.steps)
+  const blocks = steps.flatMap((s) => s.content).filter((c) => c.type === 'reasoning')
+  assert.equal(blocks.length, 0, '没有可读文本时不推空块')
+  assert.equal(steps.length, 1, '不因空 reasoning 自开步骤')
+  assert.equal(out.messages, 2)
+  assert.ok(!JSON.stringify(out).includes('fixture-blob'))
 })

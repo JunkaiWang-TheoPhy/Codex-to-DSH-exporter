@@ -13,6 +13,36 @@ from the matching section below.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-15
+
+### Added
+
+- **可选 cwd 重映射 `cwdRemap`：跨机迁移把源前缀改写到本机（#53）** — 宿主按本平台 `isAbsolute` 剔除跨平台 cwd（刻意取舍：绝不因 cwd 拒绝整次导入），所以从另一台机器搬来的会话会退化为未分组。新增可选参数 `cwdRemap: [{ from, to }]`（按 `from` 长度降序匹配、最长前缀优先、要求落在分隔符边界上），把源前缀改写成**本机**前缀；改写结果仍要过同一道绝对性校验，默认不启用、既有行为不变。落盘后的 cwd 与归组用改写值，dry-run 预览与落盘同口径（预览也走重映射，不再出现「预览一个值、落盘另一个值」）。参数/规则畸形（非数组、缺 `from`/`to`）**大声报错**而不是静默不生效；源转录不可信，余段含 `..` 的改写会被拒绝并在返回值的 `cwdRemap.reason` 里记为 `parent-traversal`。注意：重映射只对**新导入**生效——已导入的源按既有幂等语义跳过，需要 `force` 才会另建副本。
+
+### Added
+
+- **导入 Codex 会话保留 reasoning 的可读部分（#48）** — Codex rollout 的 `reasoning` 记录里 `encrypted_content` 是不透明密文（实测占该记录字节 97.5%，既不读也不搬），但 `summary` 是可读块数组（本机 1243 条 reasoning 全部带 summary）。此前整类跳过、推理内容全丢；现在把 summary 文本作为 reasoning 块导入（与 pi/claude/gemini/hermes/kimi 同形的 `{ type: 'reasoning', text }`），无 summary 时不产生空块、也不自开步骤。能力矩阵 `SOURCE_CAPABILITIES.codex.reasoning` 由 false 改为 true，`docs/INTERCHANGE.md` 的能力表与 `reasoning-encrypted` 降级说明同步改为「summary 可读、密文不可读」。
+- **导入 Codex 会话时如实标记被中断的回合（#52）** — `event_msg/turn_aborted`（本机 16 条实测 `reason` 恒为 `interrupted`，不区分用户 / hook / 销毁）此前被当作正常完成。现在该回合的 `turn/end` 记为 `{ kind: 'aborted', reason: { kind: 'legacy' } }`——`legacy` 正是宿主为「导入且原始粗粒度记录未携带原因」预留的原因类型；后续回合不受影响。预算裁剪不丢该标记（`trimTurns` 的 L1 克隆此前只取 `{ prompt, steps }`，而生产导入恒走裁剪，会把中断静默说回「正常完成」）。
+
+### Fixed
+
+- **导入 DSH 自身会话：项目目录名的 `~XXXX` 转义按宿主口径还原（#46）** — DSH 的工作区编码目录名（`$DSH_HOME/sessions/--<encoded>--/…`）把安全字符之外的每个 UTF-16 code unit 写成 `~XXXX`（宿主 `projectKey()` 的转义口径），插件此前用 `decodeURIComponent` 解，于是 `~0020` 被解成 `U+0000` + `20`——含空格的工作区名在面板里显示成控制字符。现在逐 4 位十六进制还原（大小写兼容、`~` 字面量无歧义、畸形串原样保留），与宿主 `projectKey()` / `encodeSegment()` 一致。
+- **导入撞宿主写句柄占用时不做幽灵 id 重试，长驻宿主上同源导入永久失败** — 宿主为「会话 id 已被占用」并列定义了两个错误类型（`@deepseek-ai/dsh-session-persistence`）：`SessionAlreadyExistsError`（`session "<id>" already exists`）与 `SessionAlreadyOwnedError`（`session "<id>" is already owned by an active write handle`，写句柄唯一性由**进程内** tracker 强制）。插件此前只按文案匹配前者的措辞，第二种漏判 → 错误直接上抛；而同源导入的默认 id 恒为 `import-<源 id>`，于是**桌面端这类长驻宿主上同源重复导入一直失败到重启宿主为止**（换个进程就正常，因为占用是进程内状态）。现在判定优先按 `err.name`（两个类名都认），文案（`already exists` / `duplicate session` / `already owned by an active write handle`）只作兜底——宿主将来再新增同类措辞不必再追文案；命中即按既有语义另铸后缀新 id 重试（`import-<id>-<n>`），与 #22 / 0.11.1 的「撞会话已存在」处理一致。
+
+## [0.11.5] - 2026-09-15
+
+### Fixed
+
+- **导入 DSH 自身会话按格式代次识别工件名（#44）** — 宿主 `sessionFormatLogFilename()` 的代次口径是：v0 写 `session.jsonl`，vN（N≥1）写 `session.vN.jsonl`，压缩再加 `.zstd`。插件四处判定此前只认 v0（`/session\.jsonl(?:\.zstd)?$/`），当前代次的会话日志整批扫不出来——dsh 自身作为导入源因此基本不可用，只是恰好有少数 v0 旧会话让它看起来能用（贡献者本机 52 个工件里 v0 仅 4 个）。现在代次解析收敛为 `lib/dsh.mjs` 的 `dshSessionLogVersion()` 供四处共用（目录扫描过滤 / 路径形态识别 / 单文件格式判定 / `isDshSessionFile`），口径与宿主 `@deepseek-ai/dsh-session-format` 的 `CANONICAL_LOG_FILENAME` 一致：`session.v0.jsonl` 这类非规范写法仍不认。
+- **导入 codex 归档会话：默认根补上扁平的 `archived_sessions/`（#45）** — codex rollout 有两个根：`~/.codex/sessions/YYYY/MM/DD/` 与扁平的 `~/.codex/archived_sessions/`，默认根此前只给了前者，归档 rollout 完全扫不到（本机实测 `sessions` 12 个文件、`archived_sessions` 52 个）。按 grokbuild 的既有双根形态补齐，发现层其余部分（递归遍历、`session_meta` 元数据）无需改动。
+- **单文件路径的发现恢复可用** — `fileFormatsForPath()` 判出候选格式后，目录形态的扫描器（dsh / claude / codex…）此前对**文件**目标恒返回空：`walkFiles()` 只遍历目录，`discoverSessions({ path: '<某个会话日志>' })` 因此始终 0 条（`scan_discover` 与面板按路径查询同样如此）。现在遍历器在读不到目录项时按目标文件名匹配一次，单文件路径照常交给对应扫描器。同一处还修掉 dsh 路径特征只写 POSIX 分隔符的问题（同函数其余特征早就写成 `[\\/]`，Windows 路径整条判据都不命中）。
+
+## [0.11.4] - 2026-09-15
+
+### Fixed
+
+- **与同槽插件抢 footer 行时「导入会话」按钮仍被挤成窄条/截断：判定锚点从槽元素改回本按钮自身** — footer 槽是宿主一条不换行 flex 行，同槽条目（cordis 徽标 / 插件市场 / usage-billing / cost-meter / 内置「手机连接」…）永远会和本按钮抢这条行。上一版的「按布局事实判定」在生产里恒不命中：`[data-slot='sidebar.footer.action']` **并不是本按钮**——DSH 的 slot 出口是 ui-renderer 的 `SlotOutlet`，一个 `display:contents` 外壳，所有条目都渲染在它内部、外壳自己没有盒子（Chromium 实测 `clientWidth`/`scrollWidth` 恒为 0/0、`rect` 全 0、其父元素 `children` 恒为 1），于是「槽元素内容被裁」恒为 false、「同槽条目」恒为 0 个，只剩那份选择器白名单还在起作用——而白名单既追不上来源增长、也已失效（插件市场新版不再注册进 footer）。现在锚点是本按钮自己的 ref，量两个与「它是谁」无关的数：行里剩给本按钮的宽度（行内容宽 − 同槽其它条目占位 − 行间距 − 行内边距）与完整形态所需宽度（按钮内一个脱离文档流的隐藏镜像量出，与当前形态无关，判定因此不会自我振荡）。据此自适应：**放得下**照旧与同槽条目共享一行；**同槽有整宽条目**（实测占位 ≥ 半行，如「手机连接」`calc(100% + 4px)`、费用卡 `width:100%`）而本按钮放不下时，把行换成 `wrap` 让各方各占一整行（保留 0.10.1 起的既有外观，占用者消失后自动还原）；**只是与半宽入口挤在一起**而放不下文字时，缩成 36×36 圆钮（图标保留、文字进 tooltip / aria-label，绝不截断、不遮挡、不动宿主布局）；换行容器 / 纵排容器（`usage-stats` 纵排）/ 找不到可共享的行则整宽自占一行；连 36px 图标都放不下时同样换行。判定走「不换行时能分到多少」的反事实口径，因此不会在「已注入 wrap → 空间仍不足」之间抖动。顺带修掉观测面的性能问题：原先对整个文档 `subtree:true` 观察 `style`/`class` 变化（每条消息流式渲染都会触发一次强制布局），现在只观察「本按钮 + 它所在的那条行」。判定与量宽度收敛为 `lib/footer-layout.mjs` 的纯函数并单测（含假 DOM 与「client 内联副本与模块同款」的同步守卫），浏览器实测覆盖独占 / 半宽共享 / 手机连接同槽 / 两个互相挤压的整宽条目 / 不可收缩整宽条目 / 浮层与隐藏条目 / 已 wrap / 纵排 / rail 九种布局（全部零截断、判定稳定）。
+
 ## [0.11.3] - 2026-09-13
 
 ### Fixed

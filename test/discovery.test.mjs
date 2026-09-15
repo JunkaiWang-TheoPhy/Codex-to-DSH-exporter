@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   discoverSessions, createScanCache, clearScanCache, clearInflightScans,
-  FORMATS, TITLE_MAX_LEN,
+  FORMATS, TITLE_MAX_LEN, defaultRoots,
   isInjectedTitle, normalizeTitle, layoutProject, resolveImportStatus,
 } from '../lib/discovery.mjs'
 import { resolveCursorSlugPath, clearWorkspacePathCache } from '../lib/cwd-map.mjs'
@@ -1116,4 +1116,71 @@ test('issue #16：并发同 key 扫描共享进行中 Promise（不叠加全量�
   // readDir 在扫描完成后已被调用一次（root 目录）；并发去重使其不会重复全量扫描
   // —— 验证第二次 discoverSessions 命中 inflight 或 TTL，不再重复 readDir root
   assert.ok(dirCalls <= 1, '并发同 key 扫描共享 Promise，不叠加全量 readDir（实际 ' + dirCalls + ' 次）')
+})
+
+// codex 归档目录是扁平的 archived_sessions/，与 sessions/YYYY/MM/DD/ 并列。
+// 它此前不在默认根里，归档的 rollout 完全扫不到；grokbuild 早就是双根形态。
+test('defaultRoots：codex 同时给出 sessions 与 archived_sessions 两个根', () => {
+  const roots = defaultRoots({ home: HOME }).codex
+  assert.deepEqual(roots, [
+    join(HOME, '.codex', 'sessions'),
+    join(HOME, '.codex', 'archived_sessions'),
+  ])
+})
+
+test('codex：扁平 archived_sessions/ 下的 rollout 可被发现', async () => {
+  const root = join(HOME, '.codex', 'archived_sessions')
+  const archived = join(root, 'rollout-20260310T120000-019e3b3f-636d-7cb3-aaab-0255eb45ad4f.jsonl')
+  const files = new Map([
+    [root, { type: 'dir' }],
+    [archived, { type: 'file', text: [
+      j({ type: 'session_meta', timestamp: '2026-03-10T12:00:00Z', payload: { id: '019e3b3f-636d-7cb3-aaab-0255eb45ad4f', cwd: 'D:/demo/codex-proj' } }),
+      j({ type: 'response_item', payload: { type: 'message', role: 'user', content: '归档会话也要能导入' } }),
+    ].join('\n') }],
+  ])
+  const host = mockHost(files)
+
+  const { sessions, total } = await discoverSessions({ path: root, format: 'codex', host, imports: {} })
+  assert.equal(total, 1)
+  assert.equal(sessions[0].sessionId, '019e3b3f-636d-7cb3-aaab-0255eb45ad4f')
+  assert.equal(sessions[0].title, '归档会话也要能导入')
+  assert.equal(sessions[0].sourcePath, archived)
+})
+
+// 单文件目标（显式给出某个会话日志路径）要走通「路径特征判格式 → 目录形态扫描器消费」：
+// 目录形态的扫描器此前对文件目标恒返回空（walkFiles 只遍历目录），自动探测因此形同虚设。
+// 这里同时覆盖代次工件名（session.v3.jsonl）与 Windows 分隔符（Linux CI 上也能验证）。
+test('dsh：单文件路径自动探测（不给 format）—— 代次工件名 + Windows 分隔符', async () => {
+  const winFile = 'D:\\demo\\dsh-home\\sessions\\--D-Build--\\session-abc\\session.v3.jsonl'
+  const posixFile = '/demo/dsh-home/sessions/--D-Build--/session-def/session.v3.jsonl'
+  const body = (id) => [
+    j({ type: 'session', id, cwd: '/demo/proj', createdAt: 1700000000000 }),
+    j({ type: 'user/message', seq: 1, data: { content: [{ type: 'text', text: '单文件路径也要能探测' }] } }),
+  ].join('\n')
+
+  for (const [file, id] of [[winFile, 'session-abc'], [posixFile, 'session-def']]) {
+    const host = mockHost(new Map([[file, { type: 'file', mtimeMs: 1786000002000, text: body(id) }]]))
+    const { sessions, total } = await discoverSessions({ path: file, host, imports: {} })
+    assert.equal(total, 1, '单文件目标应产出 1 条（' + file + '）')
+    assert.equal(sessions[0].format, 'dsh', file)
+    assert.equal(sessions[0].sessionId, id)
+    assert.equal(sessions[0].sourcePath, file)
+  }
+})
+
+// 项目目录名的 ~XXXX 是宿主 projectKey() 的 code-unit 转义（四位大写十六进制）。
+// 此前按 decodeURIComponent('%XXXX') 解，得到控制字符加字面量余数。
+test('layoutProject(dsh)：~XXXX 转义按 code unit 还原，不再解成控制字符', () => {
+  assert.equal(
+    layoutProject('/h/sessions/--Users-u-Documents-Github-DSH~0020Repo--/sid/session.jsonl', 'dsh'),
+    '--Users-u-Documents-Github-DSH Repo--',
+  )
+  assert.equal(
+    layoutProject('/h/sessions/--a~002Eb--/sid/session.jsonl.zstd', 'dsh'),
+    '--a.b--',
+  )
+  // 无转义的目录名原样返回
+  assert.equal(layoutProject('/h/sessions/--plain-name--/sid/session.jsonl', 'dsh'), '--plain-name--')
+  // 非会话文件名不认
+  assert.equal(layoutProject('/h/sessions/--x--/sid/other.jsonl', 'dsh'), null)
 })

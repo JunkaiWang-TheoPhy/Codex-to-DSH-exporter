@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { apply } from '../index.mjs'
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import { resolveRegistryDir, loadImports, rememberImport, removeImport } from '../lib/imports.mjs'
+import { hostAbs } from './_support/host-path.mjs'
 
 const T0 = 1710000000000 // 固定毫秒时间戳（导入时间）
 
@@ -110,7 +111,7 @@ function makePersistence() {
 }
 
 function seedSession(persistence, { id, meta, events, readFromThrows = false }) {
-  persistence.sessions.set(id, { meta: meta || { id, version: 0, cwd: 'D:\\demo', createdAt: T0 }, events, readFromThrows })
+  persistence.sessions.set(id, { meta: meta || { id, version: 0, cwd: hostAbs('D:/demo'), createdAt: T0 }, events, readFromThrows })
 }
 
 // ctx：fs 为抛错代理（REQ-33 工具不碰 fs；被调用即失败暴露），tools 收集注册。
@@ -334,7 +335,7 @@ test('retract_import：非导入会话报错；参数缺失报错', async () => 
 
 // 合成 Claude transcript（文件名 stem = sessionId，对齐导入的 fileStem 判定）。
 function claudeTranscript(sessionId) {
-  return JSON.stringify({ sessionId, type: 'user', cwd: 'D:\\demo\\proj', message: { role: 'user', content: '问题1' } }) + '\n'
+  return JSON.stringify({ sessionId, type: 'user', cwd: hostAbs('D:/demo/proj'), message: { role: 'user', content: '问题1' } }) + '\n'
     + JSON.stringify({ sessionId, type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '回答1' }] } })
 }
 

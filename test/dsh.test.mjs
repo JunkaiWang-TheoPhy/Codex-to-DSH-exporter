@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { convertDshJsonl } from '../lib/convert/dsh.mjs'
 import { defaultRoots, discoverSessions } from '../lib/discovery.mjs'
-import { readDshText } from '../lib/dsh.mjs'
+import { dshSessionLogVersion, isDshSessionFile, readDshText } from '../lib/dsh.mjs'
 
 const SESSION_LINES = [
   { type: 'session', id: 'session-dsh-test', cwd: '/tmp/proj', createdAt: 1700000000000 },
@@ -313,4 +313,43 @@ test('convertDshJsonl 丢弃无法归一的 tool/result 并计数上报（issue 
   assert.ok(out.events.every((e) => e.type !== 'tool/result'))
   // 丢弃后 seq 仍密集连续
   assert.deepEqual(out.events.map((e) => e.seq), out.events.map((_, i) => i))
+})
+
+// DSH 会话工件按代次命名：v0 是 session.jsonl，vN（N>=1）是 session.vN.jsonl，
+// 压缩再加 .zstd。此前只认 v0，当前代次（本机 52 个里的 48 个）全部扫不出来。
+test('dshSessionLogVersion 识别各代次工件名，拒绝非会话文件', () => {
+  assert.equal(dshSessionLogVersion('session.jsonl'), 0)
+  assert.equal(dshSessionLogVersion('session.jsonl.zstd'), 0)
+  assert.equal(dshSessionLogVersion('session.v1.jsonl.zstd'), 1)
+  assert.equal(dshSessionLogVersion('session.v3.jsonl.zstd'), 3)
+  assert.equal(dshSessionLogVersion('session.V3.JSONL.ZSTD'), 3)
+  assert.equal(dshSessionLogVersion('session.v12.jsonl'), 12)
+  // v0 不是规范写法（sessionFormatLogFilename 只对 >=1 加 .vN），不当作会话
+  assert.equal(dshSessionLogVersion('session.v0.jsonl'), undefined)
+  assert.equal(dshSessionLogVersion('session.v03.jsonl.zstd'), undefined)
+  assert.equal(dshSessionLogVersion('rollout-2026-01-02.jsonl'), undefined)
+  assert.equal(dshSessionLogVersion('summary.json'), undefined)
+  assert.equal(dshSessionLogVersion(''), undefined)
+  assert.equal(dshSessionLogVersion(undefined), undefined)
+  assert.equal(isDshSessionFile('session.v3.jsonl.zstd'), true)
+  assert.equal(isDshSessionFile('session.jsonl'), true)
+  assert.equal(isDshSessionFile('session.v0.jsonl'), false)
+})
+
+test('discoverSessions format=dsh 发现当前代次 session.v3.jsonl.zstd', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-import-gen3-'))
+  const dir = join(root, 'sessions', 'encoded', 'session-dsh-gen3')
+  await mkdir(dir, { recursive: true })
+  // 超过快路径阈值即不解压，故无需真实 zstd 帧；本用例断言的是「发现」，不是解压。
+  const file = join(dir, 'session.v3.jsonl.zstd')
+  await writeFile(file, Buffer.alloc(256 * 1024 + 1, 7))
+  const host = makeDshHost()
+  try {
+    const found = await discoverSessions({ format: 'dsh', path: join(root, 'sessions'), host, imports: {} })
+    assert.equal(found.total, 1)
+    assert.equal(found.sessions[0].format, 'dsh')
+    assert.equal(found.sessions[0].sourcePath, file)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

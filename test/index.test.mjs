@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { isAbsolute, dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { apply, readOpencodeDb, exportClaudeSession } from '../index.mjs'
@@ -13,12 +13,15 @@ import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import { resolveRegistryDir, loadImports, rememberImport, listPersistedIds, readSessionRecord, readSessionEvents, writeSession } from '../lib/imports.mjs'
 import { syncClaudeSession, evaluateWritebackGuards, readFileTailUuid } from '../lib/backfill.mjs'
 import { clearScanCache } from '../lib/discovery.mjs'
-import { clearWorkspacePathCache } from '../lib/cwd-map.mjs'
+import { clearWorkspacePathCache, slugifyClaudeCwd } from '../lib/cwd-map.mjs'
 import { restampSession, sanitizeJsonValue, prepareHostMeta } from '../lib/import-core.mjs'
 import { SESSION_FORMAT_VERSION } from '../convert.mjs'
+import { hostAbs, hostAbsText } from './_support/host-path.mjs'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
-const load = (name) => readFileSync(join(fixtures, name), 'utf8')
+// 夹具文本里的盘符路径按宿主平台改写：这些转录/元数据夹具带的是 Windows cwd，而宿主落盘
+// 前按本平台 isAbsolute 剔除跨平台 cwd（Linux CI 上会话会退化成未分组）。Windows 上恒等。
+const load = (name) => hostAbsText(readFileSync(join(fixtures, name), 'utf8'))
 
 // REQ-24 registry 隔离：每个用例独立 DSH_HOME（registry 落盘在 $DSH_HOME/dsh-chat-import）
 // REQ-25 扫描缓存隔离：scan_discover 的 30s TTL 缓存进程内共享，每用例清空防串扰
@@ -39,7 +42,7 @@ function claudeTurns(n, sessionId = 'sess-incr-001') {
   const lines = []
   for (let i = 1; i <= n; i++) {
     if (i === 1) {
-      lines.push(JSON.stringify({ sessionId, type: 'user', cwd: 'D:\\demo\\proj', message: { role: 'user', content: '问题' + i } }))
+      lines.push(JSON.stringify({ sessionId, type: 'user', cwd: hostAbs('D:/demo/proj'), message: { role: 'user', content: '问题' + i } }))
     } else {
       lines.push(JSON.stringify({ sessionId, type: 'user', message: { role: 'user', content: '问题' + i } }))
     }
@@ -448,7 +451,7 @@ test('单文件导入：落盘、归组、返回值符合 schema', async () => {
   // 落盘：meta + 平衡事件（归属外置 registry，日志无标记——issue #34）
   const saved = persistence.sessions.get('import-sess-simple-001')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:\\demo\\proj')
+  assert.equal(saved.meta.cwd, hostAbs('D:/demo/proj'))
   assert.equal(saved.events.at(-1).type, 'session/title')
   assert.match(saved.events.at(-1).data.title, /^Claude · /)
   assert.ok(saved.events.every((e, i) => e.seq === i))
@@ -665,7 +668,7 @@ test('import_codex 单文件导入：落盘、归组、返回值符合 schema', 
 
   const saved = persistence.sessions.get('import-019e3b3f-636d-7cb3-aaab-0255eb45ad4f')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:\\demo\\codex-proj')
+  assert.equal(saved.meta.cwd, hostAbs('D:/demo/codex-proj'))
   assert.equal(saved.events.at(-1).type, 'session/title')
   assert.match(saved.events.at(-1).data.title, /^Codex · /)
   assert.ok(saved.events.every((e, i) => e.seq === i))
@@ -725,7 +728,7 @@ test('import_codex 幂等：重复导入同一文件已存在则跳过', async (
 
 // 合成 WorkBuddy transcript（事件词汇对齐 lib/convert/workbuddy.mjs）。
 const WB_SID = 'wb-sess-0001'
-const WB_CWD = 'D:\\demo\\workbuddy-proj'
+const WB_CWD = hostAbs('D:/demo/workbuddy-proj')
 const WB_TS = 1787131157250
 function wbUser(text) {
   return { id: 'u', timestamp: WB_TS, type: 'message', role: 'user', content: [{ type: 'input_text', text: '<user_query>' + text + '</user_query>' }], sessionId: WB_SID, cwd: WB_CWD }
@@ -1089,6 +1092,9 @@ test('import_cursor agent-transcripts：slug 解码 meta.cwd 为真实项目路�
   const slug = 'e-RPA-260721-New-Funion-Client-develop'
   const uuid = 'composer-abc'
   const path = `C:\\Users\\Administrator\\.cursor\\projects\\${slug}\\agent-transcripts\\${uuid}\\${uuid}.jsonl`
+  // 同一套盘符约定：cursor 的 slug 与 storages 里的权威路径都带盘符，解码/映射出来的
+  // 是 `E:\…` 这种跨平台绝对路径——Windows 上原样落 header 并归组，POSIX 上按宿主
+  // isAbsolute 剔除（会话退化为未分组）。
   const realCwd = 'E:\\RPA-260721-New\\Funion.Client-develop'
   const storages = join(process.env.DSH_HOME, 'profiles', 'web', 'storages')
   mkdirSync(storages, { recursive: true })
@@ -1107,9 +1113,15 @@ test('import_cursor agent-transcripts：slug 解码 meta.cwd 为真实项目路�
   assert.equal(value.alreadyImported, false)
   const saved = persistence.sessions.get('import-composer-abc')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, realCwd)
+  // 分层断言（避免写死平台分支）：解码层与平台无关——cursor 的 slug 自带盘符，解码
+  // 走磁盘探测，直接断言解出的真实路径；落盘层是否保留 cwd 由宿主 isAbsolute 决定，
+  // 期望值用同一函数计算（AGENTS.md 跨平台路径纪律）。
+  const { resolveCursorSlugPath } = await import('../lib/cwd-map.mjs')
+  assert.equal(await resolveCursorSlugPath(ctx, slug), realCwd)
+  assert.equal(saved.meta.cwd, isAbsolute(realCwd) ? realCwd : undefined)
+  // 无 cwd 时归组回退到源目录（lib/import-core.mjs 的 attachToWorkspace 回退），故仍有一条
   assert.equal(attached.length, 1)
-  assert.equal(attached[0].ws, realCwd)
+  if (isAbsolute(realCwd)) assert.equal(attached[0].ws, realCwd)
 })
 
 // ---- import_gemini 集成 ----
@@ -1128,7 +1140,7 @@ test('import_gemini 单文件：落盘、归组、schema 校验', async () => {
 
   const saved = persistence.sessions.get('import-b26d7f99-0116-4d1d-b125-98c228a4b933')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:\\demo\\gemini-proj')
+  assert.equal(saved.meta.cwd, hostAbs('D:/demo/gemini-proj'))
   assert.equal(saved.events.at(-1).type, 'session/title')
   assert.match(saved.events.at(-1).data.title, /^Gemini · /)
   assert.ok(saved.events.every((e, i) => e.seq === i))
@@ -1202,7 +1214,7 @@ test('import_reasonix 单文件：meta 派生 cwd/标题、落盘、schema 校�
 
   const saved = persistence.sessions.get('import-desktop-v2')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:\\Reasonix') // meta.workspace → cwd
+  assert.equal(saved.meta.cwd, hostAbs('D:/Reasonix')) // meta.workspace → cwd
   assert.equal(saved.events.at(-1).type, 'session/title') // meta.summary → 标题
   assert.ok(saved.events.every((e, i) => e.seq === i))
   assertEnvelopeHygiene(saved.events)
@@ -1319,7 +1331,7 @@ test('import_reasonix 目录 physical：显式恢复每个 JSONL 独立导入', 
 
 test('import_reasonix 目录 canonical：无 topic key 的独立现代 meta 文件仍派生 cwd/标题', async () => {
   const line = (content) => JSON.stringify({ role: 'user', content })
-  const meta = (id) => JSON.stringify({ id, workspace_root: 'D:\\Solo', topic_title: 'Solo topic' })
+  const meta = (id) => JSON.stringify({ id, workspace_root: hostAbs('D:/Solo'), topic_title: 'Solo topic' })
   const tree = {
     'D:\\demo\\reasonix': 'dir',
     'D:\\demo\\reasonix\\solo.jsonl': line('A'),
@@ -1330,7 +1342,7 @@ test('import_reasonix 目录 canonical：无 topic key 的独立现代 meta 文�
   const def = chatDef(ctx, 'reasonix')
   const preview = await def.execute({ path: 'D:\\demo\\reasonix', preview: true })
   assert.equal(preview.total, 1)
-  assert.equal(preview.results[0].cwd, 'D:\\Solo')
+  assert.equal(preview.results[0].cwd, hostAbs('D:/Solo'))
   assert.ok(preview.results[0].title.includes('Solo topic'))
 })
 
@@ -1364,7 +1376,7 @@ test('import_pi 单文件：头行 cwd/id 落盘、归组、返回值符合 sche
 
   const saved = persistence.sessions.get('import-019f0a11-2222-7333-8444-555566667777')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:\\demo\\pi-proj')
+  assert.equal(saved.meta.cwd, hostAbs('D:/demo/pi-proj'))
   assert.equal(saved.events.at(-1).type, 'session/title')
   assert.match(saved.events.at(-1).data.title, /^Pi · /)
   assert.ok(saved.events.every((e, i) => e.seq === i))
@@ -1435,14 +1447,14 @@ function opencodeTestSessions() {
     {
       id: 'ses-a',
       title: 'Fix build',
-      directory: 'E:/demo/opencode',
+      directory: hostAbs('E:/demo/opencode'),
       createdAt: 1786000000000,
       model: { id: 'deepseek-v4-flash', providerID: 'opencode-go' },
       messages: [
         { id: 'msg-a1', createdAt: 1786000000001, data: { role: 'user' }, parts: [
           { id: 'p-a1', createdAt: 1786000000001, data: { type: 'text', text: '为什么构建失败' } },
         ] },
-        { id: 'msg-a2', createdAt: 1786000000002, data: { role: 'assistant', modelID: 'deepseek-v4-pro', path: { cwd: 'E:/demo/opencode' } }, parts: [
+        { id: 'msg-a2', createdAt: 1786000000002, data: { role: 'assistant', modelID: 'deepseek-v4-pro', path: { cwd: hostAbs('E:/demo/opencode') } }, parts: [
           { id: 'p-a2', createdAt: 1786000000002, data: { type: 'reasoning', text: '看日志' } },
           { id: 'p-a3', createdAt: 1786000000003, data: { type: 'tool', tool: 'bash', callID: 'call-a1', state: { status: 'completed', input: { command: 'cargo build' }, output: 'Compiling...' } } },
           { id: 'p-a4', createdAt: 1786000000004, data: { type: 'text', text: '修好了' } },
@@ -1452,7 +1464,7 @@ function opencodeTestSessions() {
     {
       id: 'ses-b',
       title: 'Refactor',
-      directory: 'E:/demo/opencode',
+      directory: hostAbs('E:/demo/opencode'),
       createdAt: 1786000100000,
       model: { id: 'deepseek-v4-flash', providerID: 'opencode-go' },
       messages: [
@@ -1472,7 +1484,7 @@ function opencodeCompactedSession() {
   return {
     id: 'ses-comp',
     title: 'Long task',
-    directory: 'E:/demo/opencode',
+    directory: hostAbs('E:/demo/opencode'),
     createdAt: 1786000000000,
     model: { id: 'deepseek-v4-flash', providerID: 'opencode-go' },
     messages: [
@@ -1556,7 +1568,7 @@ test('import_opencode 单库文件：批量形态、逐会话落盘、schema 校
 
   const savedA = persistence.sessions.get('import-ses-a')
   assert.ok(savedA)
-  assert.equal(savedA.meta.cwd, 'E:/demo/opencode')
+  assert.equal(savedA.meta.cwd, hostAbs('E:/demo/opencode'))
   assert.equal(savedA.meta.createdAt, 1786000000000)
   assert.equal(savedA.events.at(-1).type, 'session/title')
   assert.ok(savedA.events.every((e, i) => e.seq === i))
@@ -1629,14 +1641,14 @@ test('readOpencodeDb：只读抽取会话、消息/part 排序、模型解析', 
   assert.equal(sessions.length, 2)
   const a = sessions.find((s) => s.id === 'ses-a')
   assert.equal(a.title, 'Fix build')
-  assert.equal(a.directory, 'E:/demo/opencode')
+  assert.equal(a.directory, hostAbs('E:/demo/opencode'))
   assert.equal(a.model, 'deepseek-v4-flash') // session.model JSON 字符串 → id
   assert.equal(a.createdAt, 1786000000000)
   assert.equal(a.messages.length, 2)
   assert.equal(a.messages[0].role, 'user')
   assert.equal(a.messages[1].role, 'assistant')
   assert.equal(a.messages[1].model, 'deepseek-v4-pro') // data.modelID 平铺
-  assert.equal(a.messages[1].cwd, 'E:/demo/opencode') // data.path.cwd
+  assert.equal(a.messages[1].cwd, hostAbs('E:/demo/opencode')) // data.path.cwd
   assert.equal(a.messages[1].parts.length, 3)
   assert.equal(a.messages[1].parts[0].type, 'reasoning')
   assert.equal(a.messages[1].parts[1].type, 'tool')
@@ -1696,7 +1708,7 @@ test('import_grokbuild 单会话目录：双文件转换、落盘、归组、sch
   const tree = {
     [dir]: 'dir',
     [dir + '\\summary.json']: JSON.stringify({
-      info: { id: 'grok-sess-001', cwd: 'D:/demo/grok-proj' },
+      info: { id: 'grok-sess-001', cwd: hostAbs('D:/demo/grok-proj') },
       generated_title: 'Grok 会话标题',
       created_at: '2026-07-16T12:00:00Z',
     }),
@@ -1717,7 +1729,7 @@ test('import_grokbuild 单会话目录：双文件转换、落盘、归组、sch
 
   const saved = persistence.sessions.get('import-grok-sess-001')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'D:/demo/grok-proj')
+  assert.equal(saved.meta.cwd, hostAbs('D:/demo/grok-proj'))
   assert.equal(saved.meta.sourceId, undefined)
   // 宿主 header 白名单不含 sourceId（写入路径按 released-v2 schema 严格校验，
   // 白名单外字段会让整次创建被拒）：源 id 只服务 registry 与导出协议，不落 header
@@ -1762,7 +1774,7 @@ test('import_grokbuild 目录批量：递归扫 summary.json、逐会话独立�
 
 test('import_grokbuild 增量续写：chat_history 增长 → appended 同一会话（REQ-24）', async () => {
   const dir = 'D:\\demo\\grok\\sessions\\p\\grok-sess-incr'
-  const summary = JSON.stringify({ info: { id: 'grok-sess-incr', cwd: 'D:/demo/grok-proj' }, created_at: '2026-07-16T12:00:00Z' })
+  const summary = JSON.stringify({ info: { id: 'grok-sess-incr', cwd: hostAbs('D:/demo/grok-proj') }, created_at: '2026-07-16T12:00:00Z' })
   const tree = { [dir]: 'dir', [dir + '\\summary.json']: summary, [dir + '\\chat_history.jsonl']: grokChat(2) }
   const { ctx, persistence } = makeCtx(tree)
   apply(ctx)
@@ -1885,10 +1897,10 @@ function makeHermesTestDb() {
   const db = new DatabaseSync(dbPath)
   db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT, cwd TEXT, started_at REAL)')
   db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, created_at REAL)')
-  db.prepare('INSERT INTO sessions (id, title, cwd, started_at) VALUES (?, ?, ?, ?)').run('hm-a', 'Fix hermes build', 'E:/demo/hermes', 1786000000000)
+  db.prepare('INSERT INTO sessions (id, title, cwd, started_at) VALUES (?, ?, ?, ?)').run('hm-a', 'Fix hermes build', hostAbs('E:/demo/hermes'), 1786000000000)
   db.prepare('INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)').run('hm-a', 'user', '为什么构建失败', 1786000000001)
   db.prepare('INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)').run('hm-a', 'assistant', '是缺依赖。', 1786000000002)
-  db.prepare('INSERT INTO sessions (id, title, cwd, started_at) VALUES (?, ?, ?, ?)').run('hm-b', 'Refactor', 'E:/demo/hermes', 1786000100000)
+  db.prepare('INSERT INTO sessions (id, title, cwd, started_at) VALUES (?, ?, ?, ?)').run('hm-b', 'Refactor', hostAbs('E:/demo/hermes'), 1786000100000)
   db.prepare('INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)').run('hm-b', 'user', '重构模块', 1786000100001)
   db.prepare('INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)').run('hm-b', 'assistant', '完成', 1786000100002)
   db.close()
@@ -1919,7 +1931,7 @@ test('import_hermes SQLite：state.db 恒批量、逐会话落盘、归组、sch
 
   const savedA = persistence.sessions.get('import-hm-a')
   assert.ok(savedA)
-  assert.equal(savedA.meta.cwd, 'E:/demo/hermes')
+  assert.equal(savedA.meta.cwd, hostAbs('E:/demo/hermes'))
   assert.equal(savedA.events.at(-1).type, 'session/title')
   assert.equal(savedA.events.at(-1).data.title, 'Hermes · Fix hermes build')
   assert.ok(savedA.events.every((e, i) => e.seq === i))
@@ -1992,7 +2004,7 @@ test('import_hermes 单 .jsonl：db 之外的单会话源，mode single', async 
 
 test('REQ-72 expectedHash: 正确哈希导入成功，错误哈希失败且不落盘', async () => {
   const raw = [
-    JSON.stringify({ sessionId: 'sess-hash-001', type: 'user', cwd: 'D:\\demo\\proj', message: { role: 'user', content: '你好' } }),
+    JSON.stringify({ sessionId: 'sess-hash-001', type: 'user', cwd: hostAbs('D:/demo/proj'), message: { role: 'user', content: '你好' } }),
     JSON.stringify({ sessionId: 'sess-hash-001', type: 'assistant', message: { role: 'assistant', content: '好的' } }),
   ].join('\n') + '\n'
   const path = 'D:\\demo\\proj\\sess-hash-001.jsonl'
@@ -2028,7 +2040,7 @@ test('REQ-72 restamp: 时间戳平移到当前，保持相对间隔', () => {
 
 test('REQ-70 import_claude workspaceMode=dedicated: 导入会话挂到专用工作区', async () => {
   const raw = [
-    JSON.stringify({ sessionId: 'sess-ws-001', type: 'user', cwd: 'D:\\demo\\proj', message: { role: 'user', content: '你好' } }),
+    JSON.stringify({ sessionId: 'sess-ws-001', type: 'user', cwd: hostAbs('D:/demo/proj'), message: { role: 'user', content: '你好' } }),
     JSON.stringify({ sessionId: 'sess-ws-001', type: 'assistant', message: { role: 'assistant', content: '好的' } }),
   ].join('\n') + '\n'
   const path = 'D:\\demo\\proj\\sess-ws-001.jsonl'
@@ -2061,7 +2073,7 @@ function kimiCodeWire(recs, tsBase = 1786888277773) {
 function kimiCodeEv(type, data = {}) { return { type, ...data } }
 
 test('import_kimi 单会话目录：wire.jsonl + state.json + kimi.json 映射、落盘、归组、schema 校验', async () => {
-  const workDir = 'D:/demo/kimi-proj'
+  const workDir = hostAbs('D:/demo/kimi-proj')
   const hashDir = kimiHash(workDir)
   const sess = 'D:\\demo\\kimi\\sessions\\' + hashDir + '\\sess-001'
   const tree = {
@@ -2107,7 +2119,10 @@ test('import_kimi 单会话目录：wire.jsonl + state.json + kimi.json 映射�
 })
 
 test('import_kimi 目录批量：递归扫 wire.jsonl、逐会话独立落盘、schema 校验', async () => {
-  const hashDir = kimiHash('D:/demo/kimi-proj')
+  // 目录名与 kimi.json 里的 workDir 必须同源：产品按 kimi.json 的 path 算 hash 目录，
+  // 二者分隔符不一致就会找不到会话（Windows 上尤为明显）
+  const workDir = hostAbs('D:/demo/kimi-proj')
+  const hashDir = kimiHash(workDir)
   const mkSession = (id) => ({
     ['D:\\demo\\kimi\\sessions\\' + hashDir + '\\' + id]: 'dir',
     ['D:\\demo\\kimi\\sessions\\' + hashDir + '\\' + id + '\\wire.jsonl']: kimiWire([
@@ -2119,7 +2134,7 @@ test('import_kimi 目录批量：递归扫 wire.jsonl、逐会话独立落盘、
     ['D:\\demo\\kimi\\sessions\\' + hashDir + '\\' + id + '\\state.json']: '{}',
   })
   const tree = {
-    'D:\\demo\\kimi\\kimi.json': JSON.stringify({ work_dirs: [{ path: 'D:/demo/kimi-proj', kaos: 'local' }] }),
+    'D:\\demo\\kimi\\kimi.json': JSON.stringify({ work_dirs: [{ path: workDir, kaos: 'local' }] }),
     'D:\\demo\\kimi\\sessions': 'dir',
     ['D:\\demo\\kimi\\sessions\\' + hashDir]: 'dir',
     ...mkSession('sess-001'),
@@ -2139,7 +2154,7 @@ test('import_kimi 目录批量：递归扫 wire.jsonl、逐会话独立落盘、
   const ids = [...persistence.sessions.keys()].sort()
   assert.deepEqual(ids, ['import-sess-001', 'import-sess-002'])
   // kimi.json 映射的 cwd 挂进两会话
-  for (const id of ids) assert.equal(persistence.sessions.get(id).meta.cwd, 'D:/demo/kimi-proj')
+  for (const id of ids) assert.equal(persistence.sessions.get(id).meta.cwd, workDir)
 })
 
 test('import_kimi 增量续写：wire.jsonl 增长 → appended 同一会话（REQ-24）', async () => {
@@ -2269,7 +2284,7 @@ test('import_kimi 新 Kimi Code 单会话目录：agents/main/wire.jsonl + state
       kimiCodeEv('context.append_loop_event', { event: { type: 'step.end', turnId: '0', step: 1, finishReason: 'end_turn' } }),
       kimiCodeEv('turn.ended', { turnId: 0, reason: 'completed' }),
     ]),
-    [sess + '\\state.json']: JSON.stringify({ id: 'session-001', cwd: 'C:/Users/u/proj', title: '新 Kimi Code 标题', isCustomTitle: true }),
+    [sess + '\\state.json']: JSON.stringify({ id: 'session-001', cwd: hostAbs('C:/Users/u/proj'), title: '新 Kimi Code 标题', isCustomTitle: true }),
   }
   const { ctx, persistence, attached } = makeCtx(tree)
   apply(ctx)
@@ -2285,7 +2300,7 @@ test('import_kimi 新 Kimi Code 单会话目录：agents/main/wire.jsonl + state
 
   const saved = persistence.sessions.get('import-session-001')
   assert.ok(saved)
-  assert.equal(saved.meta.cwd, 'C:/Users/u/proj') // state.json.cwd
+  assert.equal(saved.meta.cwd, hostAbs('C:/Users/u/proj')) // state.json.cwd
   assert.equal(saved.meta.sourceId, undefined)
   // 宿主 header 白名单不含 sourceId（写入路径按 released-v2 schema 严格校验，
   // 白名单外字段会让整次创建被拒）：源 id 只服务 registry 与导出协议，不落 header
@@ -2309,7 +2324,7 @@ test('import_kimi 新 Kimi Code 目录批量：递归扫 agents/main/wire.jsonl'
         kimiCodeEv('context.append_loop_event', { event: { type: 'step.end', turnId: '0', step: 1, finishReason: 'end_turn' } }),
         kimiCodeEv('turn.ended', { turnId: 0, reason: 'completed' }),
       ]),
-      [sess + '\\state.json']: JSON.stringify({ id, cwd: 'C:/Users/u/proj' }),
+      [sess + '\\state.json']: JSON.stringify({ id, cwd: hostAbs('C:/Users/u/proj') }),
     }
   }
   const tree = {
@@ -2330,7 +2345,7 @@ test('import_kimi 新 Kimi Code 目录批量：递归扫 agents/main/wire.jsonl'
   assert.deepEqual(validateJsonSchemaValue(def.output.schema, value), [])
   const ids = [...persistence.sessions.keys()].sort()
   assert.deepEqual(ids, ['import-session-001', 'import-session-002'])
-  for (const id of ids) assert.equal(persistence.sessions.get(id).meta.cwd, 'C:/Users/u/proj')
+  for (const id of ids) assert.equal(persistence.sessions.get(id).meta.cwd, hostAbs('C:/Users/u/proj'))
 })
 
 // ---- REQ-24 增量续写（重导 append 新轮次 + 源路径幂等键） ----
@@ -2745,8 +2760,9 @@ test('export_claude 落盘：import → export 闭环、路径 <outputDir>/<slug
 
   assert.equal(value.mode, 'single')
   assert.equal(value.sourceSessionId, 'import-sess-simple-001')
-  assert.equal(value.slug, 'D--demo-proj') // D:\demo\proj → ':'、'\'、'\' 各一个 '-'
-  assert.equal(value.cwd, 'D:\\demo\\proj')
+  const expectedSlug = slugifyClaudeCwd(hostAbs('D:/demo/proj')) // 分隔符与盘符按宿主平台归一到 '-'
+  assert.equal(value.slug, expectedSlug)
+  assert.equal(value.cwd, hostAbs('D:/demo/proj'))
   assert.match(value.sessionId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   assert.equal(value.recordCount, 5) // mode + permission-mode + user + ai-title + assistant（环境变更声明被跳过）
   assert.equal(value.mapping.turns, 1)
@@ -2754,7 +2770,7 @@ test('export_claude 落盘：import → export 闭环、路径 <outputDir>/<slug
   assert.equal(value.mapping.toolCalls, 0)
   assert.equal(value.mapping.toolResults, 0)
   assert.equal(value.dryRun, false)
-  assert.equal(value.filePath, join(OUT, 'D--demo-proj', value.sessionId + '.jsonl'))
+  assert.equal(value.filePath, join(OUT, expectedSlug, value.sessionId + '.jsonl'))
   assert.deepEqual(validateJsonSchemaValue(def.output.schema, value), [])
 
   // 落盘：createIfAbsent + 内容可解析、布局正确（每行一记录、恰一个结尾换行）
@@ -2772,7 +2788,7 @@ test('export_claude 落盘：import → export 闭环、路径 <outputDir>/<slug
   assert.equal(user.type, 'user')
   assert.equal(user.parentUuid, null)
   assert.equal(typeof user.message.content, 'string')
-  assert.equal(user.cwd, 'D:\\demo\\proj')
+  assert.equal(user.cwd, hostAbs('D:/demo/proj'))
   const title = lines[3]
   assert.equal(title.type, 'ai-title')
   const asst = lines[4]
@@ -2895,7 +2911,7 @@ test('export_claude createIfAbsent：目标已存在（uuid 碰撞模拟）时�
   await chatDef(ctx, 'claude').execute({ path: 'D:\\demo\\proj\\sess-simple-001.jsonl' })
 
   const fixed = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  const target = join(OUT, 'D--demo-proj', fixed + '.jsonl')
+  const target = join(OUT, slugifyClaudeCwd(hostAbs('D:/demo/proj')), fixed + '.jsonl')
   tree[target] = 'preexisting' // 目标文件已存在
   await assert.rejects(
     () => exportClaudeSession(ctx, { sessionId: 'import-sess-simple-001', outputDir: OUT }, { uuid: () => fixed }),
@@ -2906,7 +2922,7 @@ test('export_claude createIfAbsent：目标已存在（uuid 碰撞模拟）时�
 
 test('export_claude 注入会话：非人类 user/message 跳过并计数', async () => {
   const { ctx, persistence, writes } = makeCtx({})
-  await seedSession(persistence, 'sess-inject', { version: 0, id: 'sess-inject', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'sess-inject', { version: 0, id: 'sess-inject', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('user/message', 0, 1786000000000, { id: 'i1', role: 'user', content: [{ type: 'text', text: '系统注入' }], source: { kind: 'system' } }, { surfaceOp: 'append' }),
     mkEvent('user/message', 1, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: '真实提问' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 2, 1786000000000, { id: 'a1', role: 'assistant', content: [{ type: 'text', text: '回答' }], source: { kind: 'model', provider: 'dsh' } }, { surfaceOp: 'append' }),
@@ -2924,7 +2940,7 @@ test('export_claude 注入会话：非人类 user/message 跳过并计数', asyn
 
 test('REQ-21 export_claude 降级报告：附件块跳过 + 注入跳过逐条列出（不静默）', async () => {
   const { ctx, persistence, writes } = makeCtx({})
-  await seedSession(persistence, 'sess-degrade', { version: 0, id: 'sess-degrade', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'sess-degrade', { version: 0, id: 'sess-degrade', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('user/message', 0, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: '看图' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 1, 1786000000000, { id: 'a1', message: { role: 'assistant', content: [{ type: 'text', text: '这是图' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }] }, source: { kind: 'model', provider: 'dsh' } }, { surfaceOp: 'append' }),
   ])
@@ -2945,7 +2961,7 @@ test('export_claude 中断会话：末尾补发空 tool_result，会话日志只
     mkEvent('assistant/message', 1, 1786000000000, { turn: 1, step: 1, id: 'a1', role: 'assistant', content: [{ type: 'tool-call', id: 'callZ', name: 'Bash', arguments: '{}' }], source: { kind: 'model', provider: 'dsh' } }, { surfaceOp: 'append' }),
     mkEvent('tool/call', 2, 1786000000000, { turn: 1, step: 1, callId: 'callZ', name: 'Bash', arguments: '{}' }),
   ]
-  await seedSession(persistence, 'sess-interrupted', { version: 0, id: 'sess-interrupted', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, events)
+  await seedSession(persistence, 'sess-interrupted', { version: 0, id: 'sess-interrupted', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, events)
   apply(ctx)
   const def = exportDef(ctx, 'claude')
   const value = await def.execute({ sessionId: 'sess-interrupted', outputDir: OUT })
@@ -2968,7 +2984,7 @@ test('export_claude 中断会话：末尾补发空 tool_result，会话日志只
 
 test('REQ-56 bundle 闭环：export_bundle 落盘 → restore_bundle 还原 0 skipped、schema 校验、幂等', async () => {
   const { ctx, persistence, writes } = makeCtx({})
-  await seedSession(persistence, 'sess-bundle-001', { version: 0, id: 'sess-bundle-001', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'sess-bundle-001', { version: 0, id: 'sess-bundle-001', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('turn/start', 0, 1786000000000, { turn: 1 }),
     mkEvent('user/message', 1, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: '你好' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 2, 1786000000000, { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: '你好！' }], source: { kind: 'model', provider: 'dsh' } } }, { surfaceOp: 'append' }),
@@ -2987,7 +3003,7 @@ test('REQ-56 bundle 闭环：export_bundle 落盘 → restore_bundle 还原 0 sk
   assert.equal(writes[0].options.kind, 'createIfAbsent')
 
   // 还原（bundle 在 mock 树里）；同机语义需要 originalCwd 在 fs 树中可达
-  const tree2 = { [bundlePath]: writes[0].content, 'D:\\demo\\proj': 'dir' }
+  const tree2 = { [bundlePath]: writes[0].content, [hostAbs('D:/demo/proj')]: 'dir' }
   const { ctx: ctx2, persistence: p2 } = makeCtx(tree2)
   apply(ctx2)
   const rst = registeredDef(ctx2, 'restore_bundle')
@@ -2998,7 +3014,7 @@ test('REQ-56 bundle 闭环：export_bundle 落盘 → restore_bundle 还原 0 sk
   assert.equal(restored.turns, 1)
   assert.equal(restored.messages, 2)
   assert.equal(restored.sourceSessionId, 'sess-bundle-001')
-  assert.equal(restored.originalCwd, 'D:\\demo\\proj')
+  assert.equal(restored.originalCwd, hostAbs('D:/demo/proj'))
   assert.equal(restored.cwdAvailable, true) // 同机：原 cwd 可达
   assert.deepEqual(validateJsonSchemaValue(rst.output.schema, restored), [])
   const saved = p2.sessions.get(restored.sessionId)
@@ -3046,7 +3062,7 @@ test('REQ-62 跨机器还原：originalCwd 不可达 → cwdAvailable:false + �
 
 test('REQ-56 损坏检测：bundle 被篡改（log 改动）→ restore_bundle 大声失败不还原', async () => {
   const { ctx, writes } = makeCtx({})
-  await seedSession(ctx.sessionPersistence, 'sess-tamper', { version: 0, id: 'sess-tamper', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(ctx.sessionPersistence, 'sess-tamper', { version: 0, id: 'sess-tamper', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('user/message', 0, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
   ])
   apply(ctx)
@@ -3067,7 +3083,7 @@ test('REQ-56 损坏检测：bundle 被篡改（log 改动）→ restore_bundle �
 
 test('REQ-56 restore_bundle 目录模式：递归收集 .dshbundle.json 逐文件还原', async () => {
   const { ctx, writes } = makeCtx({})
-  await seedSession(ctx.sessionPersistence, 'sess-dir-001', { version: 0, id: 'sess-dir-001', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(ctx.sessionPersistence, 'sess-dir-001', { version: 0, id: 'sess-dir-001', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('user/message', 0, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 1, 1786000000000, { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model', provider: 'dsh' } } }, { surfaceOp: 'append' }),
   ])
@@ -3075,7 +3091,7 @@ test('REQ-56 restore_bundle 目录模式：递归收集 .dshbundle.json 逐文�
   const exp = registeredDef(ctx, 'export_bundle')
   const dir = 'C:\\backups'
   await exp.execute({ sessionId: 'sess-dir-001', path: dir + '\\sess-dir-001.dshbundle.json' })
-  await exp.execute({ sessionId: 'sess-dir-001', path: dir + '\\sub\\sess-dir-001-copy.dshbundle.json', cwd: 'D:\\other' })
+  await exp.execute({ sessionId: 'sess-dir-001', path: dir + '\\sub\\sess-dir-001-copy.dshbundle.json', cwd: hostAbs('D:/other') })
 
   const { ctx: ctx2, persistence: p2 } = makeCtx({
     [dir]: 'dir',
@@ -3098,7 +3114,7 @@ test('REQ-56 restore_bundle 目录模式：递归收集 .dshbundle.json 逐文�
 
 test('REQ-23 export_codex / export_kimi：落盘 + 可再导入 + 降级报告 + schema', async () => {
   const { ctx, writes } = makeCtx({})
-  await seedSession(ctx.sessionPersistence, 'sess-matrix-001', { version: 0, id: 'sess-matrix-001', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(ctx.sessionPersistence, 'sess-matrix-001', { version: 0, id: 'sess-matrix-001', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('turn/start', 0, 1786000000000, { turn: 1 }),
     mkEvent('user/message', 1, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: '跑测试' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 2, 1786000000000, { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: '好' }, { type: 'tool-call', id: 'c1', name: 'Bash', arguments: '{"command":"npm test"}' }], source: { kind: 'model', provider: 'dsh' } } }, { surfaceOp: 'append' }),
@@ -3141,14 +3157,14 @@ test('REQ-23 export_codex / export_kimi：落盘 + 可再导入 + 降级报告 +
 test('REQ-23 verify_session：平衡会话 ok、不平衡会话定位问题 + repair 提示（只读）', async () => {
   const { ctx, persistence } = makeCtx({})
   // 平衡会话
-  await seedSession(persistence, 'sess-ok', { version: 0, id: 'sess-ok', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'sess-ok', { version: 0, id: 'sess-ok', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('turn/start', 0, 1786000000000, { turn: 1 }),
     mkEvent('user/message', 1, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 2, 1786000000000, { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model', provider: 'dsh' } } }, { surfaceOp: 'append' }),
     mkEvent('turn/end', 3, 1786000000000, { turn: 1, reason: { kind: 'completed' } }),
   ])
   // 不平衡会话：turn 无 end + call 无 result + surface 缺 surfaceOp
-  await seedSession(persistence, 'sess-broken', { version: 0, id: 'sess-broken', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'sess-broken', { version: 0, id: 'sess-broken', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('turn/start', 0, 1786000000000, { turn: 1 }),
     mkEvent('user/message', 1, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }), // 缺 surfaceOp
     mkEvent('assistant/message', 2, 1786000000000, { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model', provider: 'dsh' } } }, { surfaceOp: 'append' }),
@@ -3212,7 +3228,7 @@ test('REQ-43 agents.create 路径：setup 挂 preset scope、agentOptions 绑定
   assert.equal(agentsCalls.length, 1)
   const call = agentsCalls[0]
   assert.equal(call.sessionId, 'import-sess-simple-001')
-  assert.equal(call.meta.cwd, 'D:\\demo\\proj')
+  assert.equal(call.meta.cwd, hostAbs('D:/demo/proj'))
   assert.ok(Array.isArray(call.seed) && call.seed.length > 0)
   // 默认模型绑定（provider/model/maxTokens）→ 自动压缩路径可触发
   assert.deepEqual(call.agentOptions, { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 8192 })
@@ -3329,6 +3345,10 @@ test('REQ-39 Claude 权威映射：转录无 cwd → ~/.claude.json projects 命
     JSON.stringify({ sessionId: 'sess-nocwd-001', type: 'user', message: { role: 'user', content: 'hi' } }),
     JSON.stringify({ sessionId: 'sess-nocwd-001', type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } }),
   ].join('\n')
+  // 权威映射与 slug 解码都建立在 Claude 的 Windows 盘符约定上（会话目录名里的 '--' 是
+  // 盘符边界标记，见 lib/convert/claude.mjs / decodeClaudeSlug）：带标记的目录名才产出
+  // cwdHint，映射给出的是 `D:\work\my-proj` 这种跨平台绝对路径——Windows 上原样落 header，
+  // POSIX 上没有该标记（也就没有 cwdHint）、会话退化为未分组。
   const root = 'D:\\demo\\claude\\projects\\D--work-my-proj'
   const tree = {
     [root]: 'dir',
@@ -3342,7 +3362,11 @@ test('REQ-39 Claude 权威映射：转录无 cwd → ~/.claude.json projects 命
   assert.equal(value.status, 'imported')
   // meta.cwd = 权威映射结果（真实路径），非 slug 目录名
   const saved = persistence.sessions.get('import-sess-nocwd-001')
-  assert.equal(saved.meta.cwd, 'D:\\work\\my-proj')
+  // 分层断言：权威映射层（~/.claude.json projects）与平台无关——直接断言映射结果；
+  // 落盘层按宿主 isAbsolute 决定保留与否，期望值用同一函数计算。
+  const { resolveClaudeCwd } = await import('../lib/cwd-map.mjs')
+  assert.equal(await resolveClaudeCwd(ctx, 'D--work-my-proj'), 'D:\\work\\my-proj')
+  assert.equal(saved.meta.cwd, isAbsolute('D:\\work\\my-proj') ? 'D:\\work\\my-proj' : undefined)
 })
 
 // ---- REQ-22 Reasonix V2 WAL 合并 + Claude compacted 摘要导入（集成） ----
@@ -3504,7 +3528,7 @@ function claudeJsonl(n, sessionId = 'sync-sess-001') {
     const u = 'u-' + i
     const a = 'a-' + i
     lines.push(JSON.stringify({
-      parentUuid: prev, type: 'user', sessionId, cwd: 'D:\\demo\\proj',
+      parentUuid: prev, type: 'user', sessionId, cwd: hostAbs('D:/demo/proj'),
       message: { role: 'user', content: '问题' + i }, uuid: u,
       timestamp: new Date(LIVE_T + i * 1000).toISOString(),
     }))
@@ -3759,7 +3783,7 @@ test('REQ-36 写回后重导幂等：sync 后 import_claude → already-imported
 
 test('REQ-36 非导入会话：无 session/imported 标记 → 报错', async () => {
   const { ctx, persistence } = makeCtx({})
-  await seedSession(persistence, 'native-sess', { version: 0, id: 'native-sess', createdAt: 1786000000000, cwd: 'D:\\demo\\proj' }, [
+  await seedSession(persistence, 'native-sess', { version: 0, id: 'native-sess', createdAt: 1786000000000, cwd: hostAbs('D:/demo/proj') }, [
     mkEvent('user/message', 0, 1786000000000, { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }, { surfaceOp: 'append' }),
     mkEvent('assistant/message', 1, 1786000000000, { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'hello' }], source: { kind: 'model', provider: 'dsh' } }, { surfaceOp: 'append' }),
   ])
@@ -3892,7 +3916,7 @@ function hugeClaudeTurns(n, { giantAt = -1, giantChars = 1500 } = {}) {
   const lines = []
   const sessionId = 'sess-huge-001'
   for (let i = 1; i <= n; i++) {
-    lines.push(JSON.stringify({ sessionId, type: 'user', cwd: 'D:\\demo\\proj', message: { role: 'user', content: '问题' + i + '，' + '字'.repeat(18) } }))
+    lines.push(JSON.stringify({ sessionId, type: 'user', cwd: hostAbs('D:/demo/proj'), message: { role: 'user', content: '问题' + i + '，' + '字'.repeat(18) } }))
     const answer = i === giantAt ? '回答' + '字'.repeat(giantChars) : '回答' + i + '，' + '字'.repeat(18)
     lines.push(JSON.stringify({ sessionId, type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: answer }] } }))
   }
@@ -4104,7 +4128,7 @@ test('REQ-17 单文件 preview：返回预览清单（标题/cwd/时间/规模�
   assert.equal(value.alreadyImported, undefined)
   // 清单字段：标题 / cwd / 时间 / 规模
   assert.equal(value.title, '你好，帮我看看这个项目')
-  assert.equal(value.cwd, 'D:\\demo\\proj')
+  assert.equal(value.cwd, hostAbs('D:/demo/proj'))
   assert.equal(typeof value.createdAt, 'number')
   assert.equal(value.turns, 1)
   assert.equal(value.messages, 2)
@@ -4157,7 +4181,7 @@ test('REQ-17 目录 preview：批量形态（total/results 同骨架）、逐文
   const simple = value.results.find((r) => r.path.endsWith('sess-simple-001.jsonl'))
   assert.ok(simple)
   assert.equal(simple.title, '你好，帮我看看这个项目')
-  assert.equal(simple.cwd, 'D:\\demo\\proj')
+  assert.equal(simple.cwd, hostAbs('D:/demo/proj'))
   assert.equal(simple.turns, 1)
   assert.equal(simple.messages, 2)
   const multi = value.results.find((r) => r.path.endsWith('sess-multi-001.jsonl'))
@@ -4230,7 +4254,7 @@ test('REQ-17 import_opencode preview：SQLite 库逐会话预览（恒批量、�
   assert.equal(value.total, 2)
   const a = value.results.find((r) => r.title === 'Fix build')
   assert.ok(a)
-  assert.equal(a.cwd, 'E:/demo/opencode')
+  assert.equal(a.cwd, hostAbs('E:/demo/opencode'))
   assert.equal(a.createdAt, 1786000000000)
   assert.equal(a.turns, 1)
   assert.equal(a.toolCalls, 1)
@@ -4810,6 +4834,43 @@ test('issue #41 幽灵 id：agents.create 报 already exists 时不回退，另�
   assert.ok(persistence.sessions.has('import-sess-simple-001-1'))
 })
 
+// 宿主为「id 被占」并列定义了两个错误类型（@deepseek-ai/dsh-session-persistence）：
+// SessionAlreadyExistsError（`session "<id>" already exists`）与 SessionAlreadyOwnedError
+// （`session "<id>" is already owned by an active write handle`，进程内写句柄唯一性——长驻
+// 宿主上必现，另起进程的同名会话则正常）。两种措辞都必须触发「另铸后缀新 id 重试」，否则
+// 错误直接上抛、同源导入在宿主重启前永久失败（issue #55）。
+// 判定优先按 err.name：宿主再新增措辞时不必追文案；文案仅作兜底（老宿主 / mock host）。
+test('issue #55 会话 id 被宿主写句柄占用时，同样另铸后缀新 id 重试', async () => {
+  const cases = [
+    // 按 err.name 命中（文案故意写成无关内容，锁定「名字优先」）
+    { label: 'SessionAlreadyOwnedError（按 err.name）', make: (id) => Object.assign(new Error('见 err.name'), { name: 'SessionAlreadyOwnedError', sessionId: id }) },
+    // 文案兜底：老宿主 / 被包了一层的错误没有 name
+    { label: '仅文案（already owned by an active write handle）', make: (id) => new Error('session "' + id + '" is already owned by an active write handle') },
+  ]
+  for (const c of cases) {
+    const calls = []
+    const services = {
+      agents: {
+        async create({ sessionId, meta, seed }) {
+          calls.push(sessionId)
+          if (calls.length === 1) throw c.make(sessionId)
+          await persistence.create(meta)
+          await persistence.append(sessionId, seed)
+        },
+      },
+    }
+    const simple = load('sess-simple-001.jsonl')
+    const { ctx, persistence } = makeCtx({ 'D:\\demo\\proj\\sess-simple-001.jsonl': simple }, { services })
+    apply(ctx)
+    const value = await chatDef(ctx, 'claude').execute({ path: 'D:\\demo\\proj\\sess-simple-001.jsonl' })
+    assert.equal(value.status, 'imported', c.label)
+    assert.equal(value.sessionId, 'import-sess-simple-001-1', c.label)
+    assert.deepEqual(calls, ['import-sess-simple-001', 'import-sess-simple-001-1'], c.label)
+    assert.equal(persistence.sessions.has('import-sess-simple-001'), false, c.label)
+    assert.ok(persistence.sessions.has('import-sess-simple-001-1'), c.label)
+  }
+})
+
 test('issue #41 sanitizeJsonValue 剥离不可无损 JSON 序列化的值并上报路径', () => {
   const stripped = []
   const cyclic = { name: 'loop' }
@@ -4891,4 +4952,20 @@ test('issue #41 持久化适配层：list 元素形状、readSessionRecord、wri
   assert.deepEqual([...(await listPersistedIds(ctxOf(legacy)))].sort(), ['import-a', 'import-b'])
   await writeSession(ctxOf(legacy), { id: 'import-c' }, [{ seq: 0 }])
   assert.equal(store.sessions.get('import-c').events.length, 1)
+})
+
+// cwdRemap（PR #53）：dry-run 预览必须与落盘同口径——预览显示的 cwd 就是最终 header.cwd。
+// 预览此前不走重映射，会给出一个与落盘不同的 cwd（dry-run 撒谎）。
+test('cwdRemap：dry-run 预览与落盘的 cwd 同口径', async () => {
+  const file = 'D:\\demo\\proj\\sess-simple-001.jsonl'
+  const from = hostAbs('D:/demo/proj')
+  const to = hostAbs('D:/host/work')
+  const { ctx, persistence } = makeCtx({ [file]: load('sess-simple-001.jsonl') })
+  apply(ctx)
+  const def = chatDef(ctx, 'claude')
+  const preview = await def.execute({ path: file, preview: true, cwdRemap: [{ from, to }] })
+  assert.equal(preview.cwd, to, '预览即重映射后的 cwd')
+  const value = await def.execute({ path: file, cwdRemap: [{ from, to }] })
+  assert.equal(value.cwdRemap.mapped, to)
+  assert.equal(persistence.sessions.get(value.sessionId).meta.cwd, to, '落盘与预览一致')
 })

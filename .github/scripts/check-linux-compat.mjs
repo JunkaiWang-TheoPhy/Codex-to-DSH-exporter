@@ -11,6 +11,12 @@
 //      （模板：index.test.mjs makeCtx 的 norm + lookup 三态命中）。
 //   2. 断言不得把 dirname()/join()/basename()/relative() 的结果与写死的
 //      'X:\…' 反斜杠字面量比较（期望值必须用同口径 node:path 函数计算）。
+//   3. 夹具/断言里的 cwd 值不得写死盘符路径：`lib/import-core.mjs` 落盘前按宿主
+//      isAbsolute 剔除跨平台 cwd（宿主要求 header.cwd 绝对），写死 'D:\…' 的夹具在
+//      Linux CI 上 cwd 整条被剔除 → 断言拿到 undefined、分组落到「(未分组)」。夹具请用
+//      `hostAbs('D:/demo/proj')`（test/_support/host-path.mjs）：Windows 上得到
+//      'D:\demo\proj'，POSIX 上得到 '/demo/proj'，两侧语义一致。
+//      例外：`IS_WINDOWS ? 'D:\…' : undefined` 这类显式按平台断言的跨平台路径用例。
 //
 // 用法：node .github/scripts/check-linux-compat.mjs（无参数，扫描 test/*.test.mjs）。
 
@@ -52,6 +58,21 @@ for (const file of files) {
         `期望值必须用同口径 node:path 函数计算。`
       )
     }
+  }
+  // 规则 3：cwd / directory 字段与断言不得写死盘符路径（须经 hostAbs 取宿主绝对形态）
+  // 只在**集成面**（import ../index.mjs / import-core 的文件，即真走落盘归一的那条管线）
+  // 检查：纯转换器/纯函数层的 cwd 是原样透传的，写盘符字面量不会在 Linux 上翻车。
+  // 例外面：显式按平台断言的跨平台路径用例（`IS_WINDOWS ? 'D:\…' : undefined`）。
+  const integration = /from '\.\.\/index\.mjs'|import-core/.test(src)
+  const cwdDrive = /(\bcwd\s*[:=]\s*|\bcwd\s*,\s*|\bdirectory\s*[:=]\s*|\bdirectory\s*,\s*)'[A-Za-z]:[\\/]/
+  for (let i = 0; i < lines.length && integration; i++) {
+    if (!cwdDrive.test(lines[i])) continue
+    if (lines[i].includes('IS_WINDOWS')) continue
+    problems.push(
+      `${file}:${i + 1} cwd/directory 夹具或断言写死了盘符路径——import-core 按宿主 isAbsolute ` +
+      `剔除跨平台 cwd，Linux CI 上 cwd 会整条丢掉。请用 test/_support/host-path.mjs 的 ` +
+      `hostAbs('D:/demo/proj')；确需按平台断言的跨平台用例请显式写成 IS_WINDOWS ? 'D:\\…' : undefined。`
+    )
   }
 }
 

@@ -5,8 +5,9 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { discoverSessions, createScanCache, clearScanCache } from '../lib/discovery.mjs'
+import { hostAbs } from './_support/host-path.mjs'
 
 const j = (o) => JSON.stringify(o)
 
@@ -92,7 +93,7 @@ test('REQ-45 发现：Claude-3p 元数据 → cliSessionId 反查 jsonl 合并�
     text: j({
       sessionId: 'local_a1b2c3',
       cliSessionId: '282095ab-1111-4222-8333-444455556666',
-      cwd: 'C:\\work\\proj-a',
+      cwd: hostAbs('C:/work/proj-a'),
       originCwd: 'C:\\work\\proj-a',
       createdAt: 1786000000000,
       lastActivityAt: 1786000001000,
@@ -105,7 +106,7 @@ test('REQ-45 发现：Claude-3p 元数据 → cliSessionId 反查 jsonl 合并�
   files.set(join(root, 'acct', 'org', 'local_nolink.json'), {
     type: 'file',
     mtimeMs: 1786000000000,
-    text: j({ sessionId: 'local_nolink', title: '无 jsonl 的元数据会话', cwd: 'C:\\work\\other', createdAt: 1786000000000, lastActivityAt: 1786000000000 }),
+    text: j({ sessionId: 'local_nolink', title: '无 jsonl 的元数据会话', cwd: hostAbs('C:/work/other'), createdAt: 1786000000000, lastActivityAt: 1786000000000 }),
   })
   // 反查命中的 jsonl（文件名 stem + 首行 sessionId 校验）
   files.set(projectsRoot, { type: 'dir' })
@@ -114,7 +115,7 @@ test('REQ-45 发现：Claude-3p 元数据 → cliSessionId 反查 jsonl 合并�
     type: 'file',
     mtimeMs: 1786000000000,
     text: [
-      j({ sessionId: '282095ab-1111-4222-8333-444455556666', type: 'user', cwd: 'C:\\work\\proj-a', message: { role: 'user', content: '登录坏了' } }),
+      j({ sessionId: '282095ab-1111-4222-8333-444455556666', type: 'user', cwd: hostAbs('C:/work/proj-a'), message: { role: 'user', content: '登录坏了' } }),
       j({ sessionId: '282095ab-1111-4222-8333-444455556666', type: 'assistant', message: { role: 'assistant', content: '修好了' } }),
     ].join('\n'),
   })
@@ -125,7 +126,7 @@ test('REQ-45 发现：Claude-3p 元数据 → cliSessionId 反查 jsonl 合并�
   assert.ok(linked)
   // 标题/cwd 取元数据；sourcePath 指向反查到的 jsonl（import_claude 可直接消费）
   assert.equal(linked.title, '修复登录')
-  assert.equal(linked.cwd, 'C:\\work\\proj-a')
+  assert.equal(linked.cwd, hostAbs('C:/work/proj-a'))
   assert.equal(linked.sourcePath, jsonlPath)
   assert.equal(linked.messageCount, null) // jsonl 只读文件头
 
@@ -185,7 +186,16 @@ test('REQ-45 import_reasonix 桌面版：标题走 .titles.json、cwd 走 slug �
   const value = await def.execute({ format: 'reasonix', path: sessDir + '\\abc123.jsonl' })
   assert.equal(value.status, 'imported')
   const saved = persistence.sessions.get(value.sessionId)
-  assert.equal(saved.meta.cwd, 'C:\\users\\alice\\work') // slug 贪心解码（磁盘存在）
+  // slug 贪心解码本身与平台无关：盘符形态的 slug 一律解成 Windows 路径（'c' → 'C:\'）。
+  // 单测这层，解码是否真的命中磁盘不受运行平台影响。
+  const { greedyDecodeSlugPath } = await import('../lib/cwd-map.mjs')
+  const decoded = await greedyDecodeSlugPath(ctx, slug)
+  assert.equal(decoded, 'C:\\users\\alice\\work')
+  // 落盘层另按平台相关的 isAbsolute 校验 header.cwd（dsh-session/lib/index.js:786）：
+  // 该 Windows 路径在 POSIX 上不是绝对路径，会被剔除，会话退化为未分组——这是
+  // lib/import-core.mjs:261 的既定行为，不是缺陷。期望值按同一函数计算，不写死
+  // 盘符字面量（AGENTS.md 跨平台路径纪律）。
+  assert.equal(saved.meta.cwd, isAbsolute(decoded) ? decoded : undefined)
   const titleEv = saved.events.find((e) => e.type === 'session/title')
   assert.equal(titleEv.data.title, 'Reasonix · 桌面版会话标题') // .titles.json 权威 + 来源前缀
 })

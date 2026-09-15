@@ -106,10 +106,11 @@ test('SOURCE_CAPABILITIES: 全部 15 源覆盖且字段齐全', () => {
       assert.equal(typeof caps[k], 'boolean', format + '.' + k)
     }
   }
-  // 已知边界（契约锚点）：cursor 无 toolResults；chatgpt 无 cwd；codex reasoning 不可见
+  // 已知边界（契约锚点）：cursor 无 toolResults；chatgpt 无 cwd；codex 的 reasoning 只有
+  // summary 可读（密文 encrypted_content 不可读）
   assert.equal(SOURCE_CAPABILITIES.cursor.toolResults, false)
   assert.equal(SOURCE_CAPABILITIES.chatgpt.cwd, false)
-  assert.equal(SOURCE_CAPABILITIES.codex.reasoning, false)
+  assert.equal(SOURCE_CAPABILITIES.codex.reasoning, true)
 })
 
 test('summarizeDegradations: 只列 count > 0 的降级项，kind/策略映射正确', () => {

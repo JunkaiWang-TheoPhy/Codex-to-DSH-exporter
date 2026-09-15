@@ -58,7 +58,7 @@
 | 源 | toolResults | reasoning | cwd | branches | attachments | compacted |
 | --- | --- | --- | --- | --- | --- | --- |
 | claude | ✅ | ✅ | ✅ | — | ✅ | — |
-| codex | ✅ | 加密不可见 | ✅ | — | ✅ | — |
+| codex | ✅ | ✅（summary 可读；密文不可读） | ✅ | — | ✅ | — |
 | chatgpt | ✅（无结构化参数） | — | — | ✅（mapping DAG） | ✅ | — |
 | cursor | —（导入器补空结果） | — | — | — | — | — |
 | gemini | ✅ | ✅ | ✅ | — | — | — |
@@ -83,7 +83,7 @@
 | --- | --- | --- | --- |
 | `tool-result-missing` | toolResults | skip-placeholder | 目标格式不记录工具结果（Cursor）→ 导入器兜底补发空结果 |
 | `tool-result-text-fallback` | toolResults | text-fallback | 源格式工具消息无结构化参数（ChatGPT 网页导出）→ 按文本挂最近一步 |
-| `reasoning-encrypted` | reasoning | skip-placeholder | 推理内容不可见（Codex 加密）→ 无内容可导入 |
+| `reasoning-encrypted` | reasoning | skip-placeholder | 推理内容不可见（Codex 密文 `encrypted_content`，可读的 summary 仍照常导入）→ 密文部分无内容可导入 |
 | `cwd-missing` | cwd | text-fallback | 无工作目录（ChatGPT / Grok Build）→ 回退源目录归组 |
 | `branch-collapsed` | branches | text-fallback | 目标会话无分支概念 → 分支会话只导主线程 |
 | `attachment-skipped` | attachments | skip-placeholder | 非文本内容块无法表达 → 跳过并计数 |

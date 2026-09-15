@@ -1,44 +1,280 @@
-// footer-layout.test.mjs — footer 槽同槽挤压判定纯函数
+// footer-layout.test.mjs — footer 槽「本按钮还能占多宽」的判定纯函数
+// 夹具里的宽度都是 Chromium 实测值（256px 侧栏、宿主 `.footerActions` nowrap 行、
+// 宿主 slot 出口是 display:contents 外壳，见 lib/footer-layout.mjs 的说明）。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isFooterSqueezed, isFooterOccupant } from '../lib/footer-layout.mjs'
+import { readFileSync } from 'node:fs'
+import {
+  FOOTER_ICON_WIDTH,
+  FOOTER_LABEL_PADDING,
+  occupiesFooterLane,
+  claimsFooterRow,
+  footerLaneAvailable,
+  measureFooterLane,
+  resolveFooterSize,
+  needsFooterWrap,
+} from '../lib/footer-layout.mjs'
 
-const entry = (extra = {}) => ({ visible: true, position: 'static', width: 100, height: 42, ...extra })
+// 完整形态（图标 16 + 间距 8 + 「导入会话」+ 内边距 18）实测需要 98px
+const NEEDED = 98
 
-test('isFooterSqueezed：内容超出可视宽度即被裁；等宽/取整差 1px 不算', () => {
-  assert.equal(isFooterSqueezed(120, 75), true)
-  assert.equal(isFooterSqueezed(75, 75), false)
-  assert.equal(isFooterSqueezed(76, 75), false) // ellipsis 取整容差
-  assert.equal(isFooterSqueezed(77, 75), true)
-  assert.equal(isFooterSqueezed(NaN, 75), false)
+// —— 假 DOM：只实现 measureFooterLane 读到的面（parentElement / children /
+// clientWidth / contains / getBoundingClientRect + getComputedStyle 视图）——
+function fakeElement(style, children = [], clientWidth = 0) {
+  const node = {
+    style,
+    children,
+    clientWidth,
+    parentElement: null,
+    contains(target) { return target === node || children.some((child) => child.contains(target)) },
+    getBoundingClientRect() { return { width: style.__width || 0, height: style.__height || 0, left: 0, top: 0 } },
+  }
+  for (const child of children) child.parentElement = node
+  return node
+}
+const fakeView = { getComputedStyle: (node) => node.style }
+const laneStyle = (extra = {}) => ({
+  display: 'flex', flexDirection: 'row', flexWrap: 'nowrap',
+  paddingLeft: '0px', paddingRight: '0px', columnGap: '0px', position: 'static',
+  __width: 0, __height: 0, ...extra,
 })
 
-test('isFooterOccupant：整宽条目是占用者（未被挤压时按几何判定）', () => {
-  const context = { containerWidth: 256, squeezed: false }
-  assert.equal(isFooterOccupant(entry({ width: 260 }), context), true) // calc(100% + 4px)
-  assert.equal(isFooterOccupant(entry({ width: 256 }), context), true)
-  assert.equal(isFooterOccupant(entry({ width: 255 }), context), true) // 1px 取整容差
+/** 复刻宿主真实结构：row（256px、nowrap）> 槽出口（display:contents）+ 同槽条目 */
+function fakeFooter(entries) {
+  const row = fakeElement(laneStyle(), [], 256)
+  const outlet = fakeElement({ display: 'contents', position: 'static', __width: 0, __height: 0 })
+  row.children.push(outlet)
+  outlet.parentElement = row
+  const button = fakeElement({ display: 'flex', position: 'static', __width: 74.94, __height: 42 })
+  const probe = fakeElement({ display: 'flex', position: 'absolute', __width: 80, __height: 22 })
+  outlet.children.push(button, probe)
+  button.parentElement = outlet
+  probe.parentElement = outlet
+  for (const entry of entries) {
+    const sibling = fakeElement({
+      position: 'static', __width: entry.width, __height: 42,
+      marginLeft: (entry.margin || 0) + 'px', marginRight: (entry.margin || 0) + 'px',
+    })
+    outlet.children.push(sibling)
+    sibling.parentElement = outlet
+  }
+  return { row, outlet, button, probe }
+}
+
+test('measureFooterLane：锚点是本按钮，跳过槽出口（display:contents）外壳', () => {
+  const { row, button, probe } = fakeFooter([])
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.row, row)
+  assert.equal(facts.lane, true)
+  assert.equal(facts.wrapped, false)
+  assert.equal(facts.wideOccupant, false)
+  // 槽出口自己没有盒子，它对 available 的唯一影响只是「条目要经它展开收集」
+  assert.equal(facts.needed, 80 + FOOTER_LABEL_PADDING)
+  assert.equal(facts.available, 256)
 })
 
-test('isFooterOccupant：半宽入口共享一行不算占用者（#31 的预期行为不回归）', () => {
-  const context = { containerWidth: 256, squeezed: false }
-  assert.equal(isFooterOccupant(entry({ width: 120 }), context), false)
-  assert.equal(isFooterOccupant(entry({ width: 180 }), context), false)
+test('measureFooterLane：#43 手机连接同槽（整宽条目被压到 181px）→ 换行各自独占一行', () => {
+  // 占用者声明 width: calc(100% + 4px) 被 flex 压到 181.06px（外边距盒），留给本按钮 74.94
+  const { button, probe } = fakeFooter([{ width: 181.06, margin: 0 }])
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.available, 74.94)
+  // 占位 181.06 ≥ 半行（128）→ 认作整宽条目；放不下文字 → 换行让各方各占一整行
+  assert.equal(facts.wideOccupant, true)
+  assert.equal(needsFooterWrap({ ...facts }), true)
+  // 注入 wrap 前的一帧仍是图标形态（36px，不挤别人）；容器 wrap 后落到 row
+  assert.equal(resolveFooterSize({ ...facts }), 'icon')
+  assert.equal(resolveFooterSize({ ...facts, wrapped: true }), 'row')
 })
 
-test('isFooterOccupant：本按钮已被裁时，同槽任何占位条目都算（占用者常被一并压扁）', () => {
-  // #43 实测：占用者 calc(100%+4px) 声明、被 flex 压到 185px，容器 256px
-  const context = { containerWidth: 256, squeezed: true }
-  assert.equal(isFooterOccupant(entry({ width: 185 }), context), true)
-  assert.equal(isFooterOccupant(entry({ width: 40 }), context), true)
+test('measureFooterLane：整宽占用者（width:100%）→ 连 36px 都放不下，同样换行', () => {
+  const { button, probe } = fakeFooter([{ width: 256, margin: 0 }])
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.available, 0)
+  assert.equal(facts.wideOccupant, true)
+  assert.equal(resolveFooterSize({ ...facts }), 'icon')
+  assert.equal(needsFooterWrap({ ...facts }), true)
 })
 
-test('isFooterOccupant：不可见 / 脱离文档流 / 零尺寸的条目不计入', () => {
-  const context = { containerWidth: 256, squeezed: true }
-  assert.equal(isFooterOccupant(entry({ visible: false, width: 260 }), context), false)
-  assert.equal(isFooterOccupant(entry({ position: 'fixed', width: 260 }), context), false)
-  assert.equal(isFooterOccupant(entry({ position: 'absolute', width: 260 }), context), false)
-  assert.equal(isFooterOccupant(entry({ width: 0 }), context), false)
-  assert.equal(isFooterOccupant(entry({ height: 0 }), context), false)
-  assert.equal(isFooterOccupant(null, context), false)
+test('measureFooterLane：两个整宽条目互相挤压（各占 40%）→ 不认整宽，缩成图标同排', () => {
+  const { button, probe } = fakeFooter([{ width: 102.6, margin: 0 }, { width: 102.6, margin: 0 }])
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(Math.round(facts.available * 100) / 100, 50.8)
+  // 单个都不到半行：谁也没有「整行」的主张，缩成图标与它们同排（footer 不多占一行）
+  assert.equal(facts.wideOccupant, false)
+  assert.equal(needsFooterWrap({ ...facts }), false)
+  assert.equal(resolveFooterSize({ ...facts }), 'icon')
+})
+
+test('claimsFooterRow：按实测占位是否过「半行」线判定整宽条目', () => {
+  assert.equal(claimsFooterRow({ width: 181.06 }, 256), true)
+  assert.equal(claimsFooterRow({ width: 128 }, 256), true)
+  assert.equal(claimsFooterRow({ width: 127 }, 256), false)
+  assert.equal(claimsFooterRow({ width: 78 }, 256), false) // #31 的半宽入口
+  assert.equal(claimsFooterRow({ width: 100 }, 0), false)
+  assert.equal(claimsFooterRow(null, 256), false)
+})
+
+test('measureFooterLane：浮层（fixed/absolute）与零尺寸条目不占行内空间', () => {
+  const { row, outlet, button, probe } = fakeFooter([{ width: 200, margin: 0 }])
+  // 同槽还有一个峰谷弹窗（fixed 浮层）与一个隐藏条目：都不该被算成占位
+  for (const style of [{ position: 'fixed', __width: 300, __height: 120 }, { position: 'static', __width: 0, __height: 0 }]) {
+    const extra = fakeElement({ marginLeft: '0px', marginRight: '0px', ...style })
+    outlet.children.push(extra)
+    extra.parentElement = outlet
+  }
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.available, 256 - 200)
+  assert.equal(facts.row, row)
+})
+
+test('measureFooterLane：纵排容器 → lane=false（issue #25 保持整宽、高度随内容）', () => {
+  const { row, button, probe } = fakeFooter([])
+  row.style.flexDirection = 'column'
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.lane, false)
+  assert.equal(resolveFooterSize({ ...facts }), 'row')
+  assert.equal(needsFooterWrap({ ...facts }), false)
+})
+
+test('measureFooterLane：已 wrap 的容器 → 整宽自占一行，判定不抖', () => {
+  const { row, button, probe } = fakeFooter([{ width: 256, margin: 0 }])
+  row.style.flexWrap = 'wrap'
+  const facts = measureFooterLane(button, probe, fakeView)
+  assert.equal(facts.wrapped, true)
+  assert.equal(resolveFooterSize({ ...facts }), 'row')
+  // 反事实口径：不换行时仍分不到 36px —— 保持独占一行，不会「还原 wrap → 又被挤压」抖动
+  assert.equal(needsFooterWrap({ ...facts }), true)
+})
+
+test('measureFooterLane：无按钮 / 非浏览器视图 → 量不到，判定退回共享一行', () => {
+  const { button, probe } = fakeFooter([])
+  assert.deepEqual(measureFooterLane(null, probe, fakeView), { row: null, lane: false, wrapped: false, available: NaN, needed: NaN, wideOccupant: false })
+  const facts = measureFooterLane(button, probe, {})
+  assert.equal(facts.lane, false)
+  assert.equal(resolveFooterSize({ ...facts }), 'row')
+})
+
+// —— 同步守卫：lib/client.js 内联的副本（bundle 不 import 模块，只能各存一份）——
+// 取出 client.js 里的 footerLaneFacts 源码，与模块版在同一个假 DOM 上跑，逐字段比对。
+function extractClientCopy() {
+  const source = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  const start = source.indexOf('const footerLaneFacts = (button, probe) => {')
+  assert.notEqual(start, -1, 'lib/client.js 缺少内联的 footerLaneFacts')
+  let depth = 0
+  let index = source.indexOf('{', start)
+  for (let cursor = index; cursor < source.length; cursor += 1) {
+    if (source[cursor] === '{') depth += 1
+    else if (source[cursor] === '}') {
+      depth -= 1
+      if (depth === 0) { index = cursor; break }
+    }
+  }
+  const body = source.slice(source.indexOf('=', start) + 1, index + 1).trim()
+  return new Function('FOOTER_LABEL_PADDING', 'occupiesFooterLane', 'claimsFooterRow', 'footerLaneAvailable', 'getComputedStyle', `return ${body}`)(
+    FOOTER_LABEL_PADDING, occupiesFooterLane, claimsFooterRow, footerLaneAvailable, fakeView.getComputedStyle,
+  )
+}
+
+test('lib/client.js 内联副本与 lib/footer-layout.mjs 同款量法（同槽条目数 / 占位 / 可用宽度）', () => {
+  const inlined = extractClientCopy()
+  const scenarios = [
+    [],
+    [{ width: 181.06, margin: 0 }],
+    [{ width: 256, margin: 0 }],
+    [{ width: 78, margin: 0 }, { width: 78, margin: 0 }],
+    [{ width: 102.6, margin: 0 }, { width: 102.6, margin: 0 }],
+    [{ width: 220, margin: -2 }, { width: 220, margin: -2 }],
+  ]
+  for (const entries of scenarios) {
+    const { button, probe } = fakeFooter(entries)
+    const fromModule = measureFooterLane(button, probe, fakeView)
+    const fromClient = inlined(button, probe)
+    assert.equal(fromClient.row, fromModule.row, JSON.stringify(entries))
+    assert.equal(fromClient.lane, fromModule.lane)
+    assert.equal(fromClient.wrapped, fromModule.wrapped)
+    assert.equal(fromClient.available, fromModule.available, JSON.stringify(entries))
+    assert.equal(fromClient.needed, fromModule.needed)
+    assert.equal(fromClient.wideOccupant, fromModule.wideOccupant, JSON.stringify(entries))
+    assert.equal(resolveFooterSize({ ...fromClient }), resolveFooterSize({ ...fromModule }))
+    assert.equal(needsFooterWrap({ ...fromClient }), needsFooterWrap({ ...fromModule }))
+    assert.equal(needsFooterWrap({ ...fromClient, wrapped: true }), needsFooterWrap({ ...fromModule, wrapped: true }))
+  }
+})
+
+test('occupiesFooterLane：浮层与零尺寸条目不占行内空间', () => {
+  assert.equal(occupiesFooterLane({ position: 'static', width: 256, height: 42 }), true)
+  assert.equal(occupiesFooterLane({ position: 'fixed', width: 256, height: 42 }), false)
+  assert.equal(occupiesFooterLane({ position: 'absolute', width: 256, height: 42 }), false)
+  assert.equal(occupiesFooterLane({ position: 'static', width: 0, height: 42 }), false)
+  assert.equal(occupiesFooterLane({ position: 'static', width: 256, height: 0 }), false)
+  assert.equal(occupiesFooterLane(null), false)
+  // 宿主 slot 出口（display:contents 外壳）实测 clientWidth/scrollWidth/rect 全 0：
+  // 以它为锚的「同槽条目」收集恒为空，这正是 0.11.3 判定失效的形态
+  assert.equal(occupiesFooterLane({ position: 'static', width: 0, height: 0 }), false)
+})
+
+test('footerLaneAvailable：扣掉同槽占位、行内边距与条目间距', () => {
+  assert.equal(footerLaneAvailable({ rowWidth: 256 }), 256)
+  assert.equal(footerLaneAvailable({ rowWidth: 256, occupiedWidth: 156, itemCount: 3 }), 100)
+  assert.equal(footerLaneAvailable({ rowWidth: 256, occupiedWidth: 156, gap: 4, itemCount: 3 }), 92)
+  assert.equal(footerLaneAvailable({ rowWidth: 256, padding: 24, occupiedWidth: 220, itemCount: 2 }), 12)
+  // 同槽占满整行 → 负值（连图标都放不下，交给 needsFooterWrap）
+  assert.equal(footerLaneAvailable({ rowWidth: 256, occupiedWidth: 260, itemCount: 2 }), -4)
+  assert.ok(Number.isNaN(footerLaneAvailable({ rowWidth: NaN })))
+})
+
+test('resolveFooterSize：放得下就共享一行（#31 的预期行为不回归）', () => {
+  // #31 实测：256px 行 + 两个 78px 半宽入口 → 留给本按钮 100px ≥ 98px
+  assert.equal(resolveFooterSize({ lane: true, available: 100, needed: NEEDED }), 'share')
+  assert.equal(resolveFooterSize({ lane: true, available: NEEDED, needed: NEEDED }), 'share')
+  // 独占整行（只有本按钮）时走 flex 增长，仍是 share
+  assert.equal(resolveFooterSize({ lane: true, available: 256, needed: NEEDED }), 'share')
+})
+
+test('resolveFooterSize：放不下就缩成图标（与半宽入口抢同一行）', () => {
+  // 三个半宽入口同槽：留给本按钮 74.94px（< 98px 的文字形态）
+  assert.equal(resolveFooterSize({ lane: true, available: 74.94, needed: NEEDED }), 'icon')
+  // 缩成图标后占用者涨回来，留给本按钮 36px —— 判定必须仍是图标（不来回抖）
+  assert.equal(resolveFooterSize({ lane: true, available: FOOTER_ICON_WIDTH, needed: NEEDED }), 'icon')
+  assert.equal(resolveFooterSize({ lane: true, available: 37, needed: NEEDED + FOOTER_LABEL_PADDING }), 'icon')
+  // 两个整宽条目互相挤压（实测留给本按钮 50.8px）
+  assert.equal(resolveFooterSize({ lane: true, available: 50.8, needed: NEEDED }), 'icon')
+  // 图标都放不下也先取图标形态（换行由 needsFooterWrap 负责，见下）
+  assert.equal(resolveFooterSize({ lane: true, available: 0, needed: NEEDED }), 'icon')
+  assert.equal(resolveFooterSize({ lane: true, available: -4, needed: NEEDED }), 'icon')
+})
+
+test('resolveFooterSize：纵排 / 换行容器 / 找不到行 → 整宽自占一行', () => {
+  // dsh-usage-stats 强制纵排（issue #25）、dsh-tokenledger 注入 wrap
+  assert.equal(resolveFooterSize({ lane: false, available: 0, needed: NEEDED }), 'row')
+  assert.equal(resolveFooterSize({ lane: true, wrapped: true, available: 256, needed: NEEDED }), 'row')
+  // 量不到（未挂载 / 非浏览器 / 镜像未渲染）→ 维持共享一行
+  assert.equal(resolveFooterSize({ lane: true, available: NaN, needed: NEEDED }), 'share')
+  assert.equal(resolveFooterSize({ lane: true, available: 256, needed: NaN }), 'share')
+})
+
+test('resolveFooterSize：rail（收起）态恒为图标，不写宿主布局', () => {
+  assert.equal(resolveFooterSize({ rail: true, lane: true, available: 256, needed: NEEDED }), 'icon')
+  assert.equal(resolveFooterSize({ rail: true, lane: false, available: NaN, needed: NaN }), 'icon')
+  assert.equal(needsFooterWrap({ rail: true, lane: true, available: 0 }), false)
+})
+
+test('needsFooterWrap：整宽条目同槽就换行各自独占一行；半宽入口不换行', () => {
+  // #43 实测：整宽条目被压到 181.06px、留给本按钮 74.94px —— 放不下文字 → 换行
+  assert.equal(needsFooterWrap({ lane: true, available: 74.94, needed: NEEDED, wideOccupant: true }), true)
+  // cost-meter 费用卡（width:100%）同槽 → 同样换行（0.10.1 起的既有外观）
+  assert.equal(needsFooterWrap({ lane: true, available: FOOTER_ICON_WIDTH, needed: NEEDED, wideOccupant: true }), true)
+  // 半宽入口同槽（#31）：放不下文字时缩图标，不动宿主容器
+  assert.equal(needsFooterWrap({ lane: true, available: 74.94, needed: NEEDED, wideOccupant: false }), false)
+  assert.equal(needsFooterWrap({ lane: true, available: 100, needed: NEEDED, wideOccupant: false }), false)
+  // 放得下就绝不动宿主容器，哪怕同槽有整宽条目
+  assert.equal(needsFooterWrap({ lane: true, available: 150, needed: NEEDED, wideOccupant: true }), false)
+  // 连 36px 图标都放不下 → 无论占用者是谁都要一行自己的位置
+  assert.equal(needsFooterWrap({ lane: true, available: 0, needed: NEEDED, wideOccupant: false }), true)
+  assert.equal(needsFooterWrap({ lane: true, available: -4, needed: NEEDED, wideOccupant: false }), true)
+  assert.equal(needsFooterWrap({ lane: true, available: FOOTER_ICON_WIDTH - 1, needed: NEEDED, wideOccupant: false }), true)
+  // 已是 wrap 容器（他人注入）时按反事实口径判定：占满整行仍应保持独占一行
+  assert.equal(needsFooterWrap({ lane: true, wrapped: true, available: -4, needed: NEEDED, wideOccupant: true }), true)
+  assert.equal(needsFooterWrap({ lane: false, available: 0, needed: NEEDED }), false)
+  assert.equal(needsFooterWrap({ lane: true, available: NaN, needed: NEEDED }), false)
 })
