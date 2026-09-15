@@ -24,12 +24,12 @@ import {
   encodeSegment,
   generationLogFilename,
   parseGenerationLogFilename,
+  parseRolloutText,
   projectKey,
   sessionArtifactPath,
   synthesizeSession,
   verifyArtifact,
 } from '../dist/index.js';
-import { parseRolloutText } from '@codex-to-dsh/codex-rollout';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = readFileSync(join(here, '..', '..', '..', 'fixtures', 'rollout-sample.jsonl'), 'utf8');
