@@ -17,13 +17,17 @@
 
 A Codex working environment lives inside one program's directory: sessions, skills, agent definitions, MCP servers, the command allow-list. Getting it into the DeepSeek Harness usually means either trusting a one-shot import you cannot inspect, or rebuilding it by hand.
 
-This repository is secondary development on [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), which already reads 21 coding agents and writes real DSH sessions through the harness's own API. That entire codebase is kept. Two things are added: an export half that captures a Codex home into a portable, verifiable archive before DSH is involved, and seven fidelity fixes on the Codex path.
+This repository is secondary development on [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), which already reads 21 coding agents and writes real DSH sessions through the harness's own API. That codebase is kept unchanged.
 
-The inherited import keeps working. Nothing here changes how it behaves.
+The work runs on two tracks, and this document says which is which.
 
-## What this fork changes
+**Offered upstream, not in this tree.** Seven fidelity fixes on the Codex path are being submitted as separate pull requests, so that the 18,000 people a month already running this code receive them. Three are open — #44 session-generation discovery, #45 the `archived_sessions` root, #46 the `~XXXX` escape — and the rest are in progress. **None of them is in this repository's code yet.**
 
-Seven fixes, each traceable to a measurement or a read of the harness source. The reasoning behind each is in [docs/fork-plan.md](docs/fork-plan.md).
+**Designed here, not built.** The export half — reading a Codex home read-only and writing a portable, verifiable archive before DSH is involved — is specified in [docs/archive-format.md](docs/archive-format.md) and [docs/pipeline-design.md](docs/pipeline-design.md). `packages/codex-archive` holds its type declarations and no behaviour.
+
+## The seven fixes
+
+Each is traceable to a measurement or a read of the harness source. Each is a separate pull request against upstream. The reasoning behind each is in [docs/fork-plan.md](docs/fork-plan.md).
 
 | | Change | Why it was needed |
 |---|---|---|

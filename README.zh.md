@@ -17,13 +17,17 @@
 
 Codex 的工作环境装在一个程序的目录里：会话、技能、agent 定义、MCP 服务器、命令白名单。要把它搬进 DeepSeek Harness，通常只有两条路——信任一次无法预先检查的导入，或者手工重建。
 
-本仓库是对 [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import) 的二次开发。上游已经能读 21 种 coding agent，并通过 harness 自己的 API 写出真实的 DSH 会话。那份代码库整体保留，本仓库加上两样东西：一个导出端，在 DSH 参与之前就把 Codex home 抓成可移植、可校验的归档；以及 Codex 路径上的七项保真修复。
+本仓库是对 [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import) 的二次开发。上游已经能读 21 种 coding agent，并通过 harness 自己的 API 写出真实的 DSH 会话。那份代码库整体保留，未作改动。
 
-继承来的导入功能照常工作，本仓库不改变它的行为。
+工作分两条线，本文说明哪条是哪条。
 
-## 本 fork 改了什么
+**已提上游，不在本仓库代码里。** Codex 路径上的七项保真修复正以独立 PR 提交，好让每月已在运行这份代码的约 18,000 人拿到它们。已开三个：#44 会话代次发现、#45 `archived_sessions` 默认根、#46 `~XXXX` 转义解码；其余在进行中。**这些修复一个都不在本仓库的代码里。**
 
-七项修复，每一项都能追溯到一次实测或一段 harness 源码。逐条理由见 [docs/fork-plan.md](docs/fork-plan.md)。
+**只做了设计，尚未实现。** 导出端——在 DSH 参与之前只读地读一个 Codex home，写出可移植、可校验的归档——规范在 [docs/archive-format.md](docs/archive-format.md) 与 [docs/pipeline-design.md](docs/pipeline-design.md)。`packages/codex-archive` 目前只有类型声明，没有行为。
+
+## 七项修复
+
+每一项都能追溯到一次实测或一段 harness 源码。每一项都是对上游的一个独立 PR。逐条理由见 [docs/fork-plan.md](docs/fork-plan.md)。
 
 | | 改动 | 为什么需要 |
 |---|---|---|
