@@ -33,9 +33,12 @@ jobs:
       #（黑名单文件 dev/leak-blocklist.txt 是 gitignore 本地文件，绝不入库），自动降级为
       # 通用规则——本地 pre-commit（dev/hooks/pre-commit）覆盖完整规则。
       - run: npm run check:leaks
-      # 双语 README 结构同步护栏（REQ-06）：README.md 与 README.zh-CN.md 的
-      # 标题层级序列与语言无关锚点键必须一致；某一版删/加/改标题即红（翻译差异不误报）
-      - run: node .github/scripts/check-readme-sync.mjs
+      # 双语 README 结构同步护栏（REQ-06）：README.md 与 README.zh.md 的
+      # 标题层级序列与语言无关锚点键必须一致；某一版删/加/改标题即红（翻译差异不误报）。
+      # 本仓库中文版命名为 README.zh.md（上游为 README.zh-CN.md），文件名由脚本参数传入。
+      # 走 npm script 而非裸 node：裸调用时脚本回落到上游默认名，本地没有对应 script
+      # 就没人跑得到它，这道门禁曾因此长期红而无人察觉。
+      - run: npm run check:readme
       # 锁文件漂移护栏：package.json 改了版本/依赖而未同步 lockfile 时，
       # npm 重算出的 lockfile 与仓库版本不一致 → git diff 非空 → 该步红
       - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
