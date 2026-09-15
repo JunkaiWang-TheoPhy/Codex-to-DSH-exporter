@@ -8,27 +8,44 @@ Origin
 dsh-chat-import — https://github.com/Nwflower/dsh-chat-import
 Licence: MIT, Copyright (c) 2026 Nwflower, Copyright (c) 2026 Scarlett
 
-Fork point
-----------
-Version 0.11.3, published 2026-09-13.
+Fork point and current pin
+--------------------------
+Fork point: version 0.11.3, published 2026-09-13.
+Current pin: version 0.12.0, published 2026-09-15.
 
 The `lib/`, `bin/`, `index.mjs`, `convert.mjs`, `export.mjs` and
 `cordis.patch.yml` trees are derived from that project. Their MIT licence and
-both copyright notices are preserved in LICENSE, as the licence requires.
+both copyright notices are preserved in LICENSE, as the licence requires. They
+are kept byte-identical to the pinned upstream release and updated by
+re-applying upstream's changes, not by editing them here.
 
 What changed
 ------------
 Each change is recorded in docs/fork-plan.md with the measurement or source
-reading that motivated it. In summary:
+reading that motivated it. In summary, with what became of each:
 
 - G1  Codex reasoning records are preserved, minus the opaque ciphertext.
+      Merged upstream as #48.
 - G2  The Codex event_msg channel is read rather than ignored wholesale.
+      The turn-abort half merged as #52. The compaction half is G3.
 - G3  Codex compaction records are handled.
-- G4  ~/.codex/archived_sessions/ is discovered.
+      NOT DELIVERED. Codex compaction carries no text summary, and its
+      replacement_history is a full message array meaning "replaces the turns
+      before this one", so it needs a stateful rewrite plus a default-retention
+      policy that was never agreed.
+- G4  ~/.codex/archived_sessions/ is discovered. Merged upstream as #45.
 - G5  Current-generation DSH session logs (session.vN.jsonl.zstd) are readable.
       Previously 48 of 52 sessions on the test machine were invisible.
+      Merged upstream as #44.
 - G6  Unknown record types are preserved as ignorable events.
-- G7  A recorded working directory can be remapped.
+      NOT DELIVERED. DSH honours `ignorable` on read, but its public write path
+      (Session.append) threads only sourceEventSeqs and surfaceOp, so an
+      external writer cannot set it without hand-encoding the log.
+- G7  A recorded working directory can be remapped. Merged upstream as #53.
+
+Two further changes outside that list merged upstream as well: #46 (decoding
+`~XXXX` escapes in DSH project directory names) and #51 (splitting the REQ-45
+slug assertion into a decode layer and a disk layer).
 
 Added, not derived
 ------------------
@@ -39,5 +56,8 @@ session format used to validate it. The `docs/` tree is this project's own.
 
 Upstream contributions
 ----------------------
-The changes are kept as separable commits so they can be offered upstream,
-which states in CONTRIBUTING.md that PRs are welcome for fidelity upgrades.
+Eleven pull requests were offered upstream, which states in CONTRIBUTING.md
+that PRs are welcome for fidelity upgrades. Seven merged: #44, #45, #46, #48,
+#51, #52, #53. Four were closed without merging: #47, #49, #50 and #54, because
+upstream repaired the same platform failures in f589018 by a route that keeps
+Windows path coverage that those four traded away.

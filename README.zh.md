@@ -5,9 +5,9 @@
 # Codex-to-DSH-exporter
 
 [![许可证](https://img.shields.io/badge/license-MIT-2EA44F?style=flat)](LICENSE)
-[![基座](https://img.shields.io/badge/base-dsh--chat--import%20v0.11.3-4D6BFE?style=flat)](https://github.com/Nwflower/dsh-chat-import)
+[![基座](https://img.shields.io/badge/base-dsh--chat--import%20v0.12.0-4D6BFE?style=flat)](https://github.com/Nwflower/dsh-chat-import)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.13-43853D?style=flat)](package.json)
-[![测试基线](https://img.shields.io/badge/inherited%20tests-688%20%2F%20715-B08900?style=flat)](#状态)
+[![测试基线](https://img.shields.io/badge/inherited%20tests-753%20%2F%20753-2EA44F?style=flat)](#状态)
 [![导出端测试](https://img.shields.io/badge/codex--archive%20tests-43%20%2F%2043-2EA44F?style=flat)](#状态)
 
 <img src="assets/banner.png" alt="一个装满分卡片的档案抽屉，一张卡片被抽出并盖了章，右侧汇入封存的档案块" width="1000">
@@ -18,11 +18,9 @@
 
 Codex 的工作环境装在一个程序的目录里：会话、技能、agent 定义、MCP 服务器、命令白名单。要把它搬进 DeepSeek Harness，通常只有两条路——信任一次无法预先检查的导入，或者手工重建。
 
-本仓库是对 [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import) 的二次开发。上游已经能读 21 种 coding agent，并通过 harness 自己的 API 写出真实的 DSH 会话。那份代码库整体保留，未作改动。
+本仓库是对 [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import) 的二次开发。上游已经能读 21 种 coding agent，并通过 harness 自己的 API 写出真实的 DSH 会话。那份代码库整体保留、未作改动，钉在已发布的 v0.12.0 上；更新方式是重新套用上游的改动，而不是去改它的文件。
 
-工作分两条线，本文说明哪条是哪条。
-
-**已提上游，不在本仓库代码里。** Codex 路径上的七项保真修复正以独立 PR 提交，好让每月已在运行这份代码的约 18,000 人拿到它们。已合并两个（#44 会话代次发现、#45 `archived_sessions` 默认根），另有七个开着（#46–#53，以及 #54）。**这些修复一个都不在本仓库的代码里。**
+**已提上游，现在也在本仓库里。** 共有 11 个 PR 提到上游，好让已在运行这份代码的人拿到这些修复。合并了 7 个（#44、#45、#46、#48、#51、#52、#53），关闭未合并 4 个（#47、#49、#50、#54）——上游用另一条路线修掉了同一批平台失败，那条路线保住了我丢掉的那部分 Windows 路径覆盖。下面的 v0.12.0 同步把这一切都带进了本仓库。
 
 **在本仓库实现了的是导出端。** 在 DSH 参与之前只读地读一个 Codex home，写出可移植、可校验的归档——实现放在 `packages/codex-archive`。格式规范见 [docs/archive-format.md](docs/archive-format.md)，给导入端的分层见 [docs/pipeline-design.md](docs/pipeline-design.md)。该包自带测试（在它目录下 `npm test`：43 项，全通过），并在一个真实 5,538 个 rollout 的 Codex home 上跑过一遍。
 
@@ -30,23 +28,27 @@ Codex 的工作环境装在一个程序的目录里：会话、技能、agent �
 
 ## 七项修复
 
-每一项都能追溯到一次实测或一段 harness 源码。每一项都是对上游的一个独立 PR。逐条理由见 [docs/fork-plan.md](docs/fork-plan.md)。
+每一项都能追溯到一次实测或一段 harness 源码，并且各自作为独立 PR 提到上游。逐条理由见 [docs/fork-plan.md](docs/fork-plan.md)。表外另有两项也提了上游，都在发现面（#46、#51）。
 
-| | 改动 | 为什么需要 |
-|---|---|---|
-| **G1** | 保留 Codex 的 `reasoning` 记录 | 可读部分占全语料 0.15%，此前与密文一起被丢弃 |
-| **G2** | 读取 Codex 的 `event_msg` 通道 | 此前整通道跳过，compaction 与回合中断信号全部丢失 |
-| **G3** | 处理 Codex 的 compaction 记录 | 另外五种来源都做了，唯独 Codex 没有 |
-| **G4** | 发现 `~/.codex/archived_sessions/` | 测试机上有 398 个 rollout 完全取不到 |
-| **G5** | 能读当前代次的 DSH 日志 | 正则匹配 `session.jsonl.zstd` 却匹配不到 `session.v3.jsonl.zstd`，**52 个会话里漏掉 48 个** |
-| **G6** | 未知记录类型以 `ignorable` 事件留存 | DSH 在源码里写明这是它的兼容机制，Codex 路径此前没有使用 |
-| **G7** | 记录的工作目录可重映射 | 跨机归档现在会落成未分组，这是有意设计的取舍 |
+| | 改动 | 为什么需要 | 结果 |
+|---|---|---|---|
+| **G1** | 保留 Codex 的 `reasoning` 记录 | 可读部分占全语料 0.15%，此前与密文一起被丢弃 | 已合并，#48 |
+| **G2** | 读取 Codex 的 `event_msg` 通道 | 此前整通道跳过，compaction 与回合中断信号全部丢失 | 已合并，#52——只覆盖回合中断那一半，compaction 那半是 G3 |
+| **G3** | 处理 Codex 的 compaction 记录 | 另外五种来源都做了，唯独 Codex 没有 | **未交付**，见下 |
+| **G4** | 发现 `~/.codex/archived_sessions/` | 测试机上有 398 个 rollout 完全取不到 | 已合并，#45 |
+| **G5** | 能读当前代次的 DSH 日志 | 正则匹配 `session.jsonl.zstd` 却匹配不到 `session.v3.jsonl.zstd`，**52 个会话里漏掉 48 个** | 已合并，#44 |
+| **G6** | 未知记录类型以 `ignorable` 事件留存 | DSH 在源码里写明这是它的兼容机制，Codex 路径此前没有使用 | **未交付**，见下 |
+| **G7** | 记录的工作目录可重映射 | 跨机归档现在会落成未分组，这是有意设计的取舍 | 已合并，#53 |
 
 G5 是已发布行为里的缺陷，一行即可复现，且影响任何用户会话库的大部分。
 
+有两项没落地。**G3** 没有商定的语义：Codex 的 compaction 不带文本摘要，`replacement_history` 是完整消息数组、含义是"替换此前的回合"，所以处理它需要一次有状态改写，外加一套谁也没定下来的默认保留策略。**G6** 是 DSH 文档里写了、外部写不进去的能力：`ignorable` 在读取时被认可，而公开写路径（`Session.append`）只透传 `sourceEventSeqs` 与 `surfaceOp`，外部写入方不手工编码日志就无法设置它。
+
+这类平台失败上游也自己修了一遍（`f589018`），赶在上面四个 PR 合并之前。
+
 ## 继承来的能力
 
-以下都是上游的工作，未作改动。
+以下都是上游 v0.12.0 的工作，未作改动。
 
 **从 21 种 agent 导入** —— Claude Code、Codex、ChatGPT、Cursor、Gemini、Antigravity CLI、Reasonix、opencode、MiMo Code、ZCode、Grok Build、OpenClaw、Pi Coding Agent、Hermes、Kimi CLI 与 Kimi Code、Kilo Code、Qoder CLI、WorkBuddy、千问办公，以及 DSH 自身的会话日志和按内容识别的本地 JSONL。
 
@@ -83,11 +85,9 @@ import_chat({ format: "claude", path: "~/.claude/projects" })
 
 两套测试，彼此不能替代。它们覆盖不同的代码，任何一套变绿都不说明另一套。
 
-**继承来的（`/`，上游插件）。** **688 通过、27 失败**，本仓库与上游 v0.11.3 的干净检出结果一致。上游 CI 在 `main` 上的最近每次运行都卡在 `npm test` 这一步。这些失败是继承来的，不是本仓库引入的，目前尚未修复。
+**继承来的（`/`，上游插件，v0.12.0）。** **753 通过、0 失败**，与上游 v0.12.0 的干净检出结果一致；上游 CI 自 `1b2ef6e` 起持续为绿。本仓库早前的版本带着从 v0.11.3 继承来的 27 项失败，是 v0.12.0 同步把它们去掉的——上游修掉了它们，本仓库没有任何绕过。
 
-至少有一处是代码与测试的直接矛盾：`lib/import-core.mjs:261` 会删掉跨平台的 `cwd`，让会话退化为未分组，而不是让整次导入失败，代码注释就是这么写的，而测试断言 Windows 路径必须存活。
-
-请把 **688 / 715** 当作那套测试的基线。套件变绿不等于某次改动是对的。
+那些失败背后的 `cwd` 行为仍然是有意保留的：`lib/import-core.mjs` 会删掉宿主判为非绝对的 `cwd`，让会话退化为未分组，而不是让整次导入失败。测试现在用同一条平台规则算出期望值，不再断言 Windows 路径在任何平台上都必须存活。
 
 **导出端（`packages/codex-archive`）。** **43 通过、0 失败**。比这个数字更要紧的是这些测试在测什么：那套里每一个失败用例都对应一个先被复现出来的缺陷，其中三个是动手做出来的、而不是读文档读出来的——
 

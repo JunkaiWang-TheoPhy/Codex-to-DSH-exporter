@@ -190,7 +190,7 @@ assessed; neither is a code source for this project.
 **`jlcodes99/cockpit-tools`** declares `CC-BY-NC-SA-4.0` in `Cargo.toml` and
 its README, and **has no LICENSE file at the repository root** — GitHub reports
 no licence at all. Non-commercial plus ShareAlike is incompatible with
-AGPL-3.0 in both directions: the non-commercial term would make the combined
+MIT in both directions: the non-commercial term would make the combined
 work non-free, and ShareAlike would demand relicensing. It also does not
 contain what this project needs: its `export_sessions` produces a Codex-to-Codex
 zip bundle, and it has no zstd session support. Used here as a design reference

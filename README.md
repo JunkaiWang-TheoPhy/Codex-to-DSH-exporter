@@ -5,9 +5,9 @@
 # Codex-to-DSH-exporter
 
 [![License](https://img.shields.io/badge/license-MIT-2EA44F?style=flat)](LICENSE)
-[![Base](https://img.shields.io/badge/base-dsh--chat--import%20v0.11.3-4D6BFE?style=flat)](https://github.com/Nwflower/dsh-chat-import)
+[![Base](https://img.shields.io/badge/base-dsh--chat--import%20v0.12.0-4D6BFE?style=flat)](https://github.com/Nwflower/dsh-chat-import)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.13-43853D?style=flat)](package.json)
-[![Test baseline](https://img.shields.io/badge/inherited%20tests-688%20%2F%20715-B08900?style=flat)](#status)
+[![Test baseline](https://img.shields.io/badge/inherited%20tests-753%20%2F%20753-2EA44F?style=flat)](#status)
 [![Export tests](https://img.shields.io/badge/codex--archive%20tests-43%20%2F%2043-2EA44F?style=flat)](#status)
 
 <img src="assets/banner.png" alt="An archive drawer of filed cards with one card drawn out and stamped, feeding into a sealed archive block" width="1000">
@@ -18,11 +18,9 @@
 
 A Codex working environment lives inside one program's directory: sessions, skills, agent definitions, MCP servers, the command allow-list. Getting it into the DeepSeek Harness usually means either trusting a one-shot import you cannot inspect, or rebuilding it by hand.
 
-This repository is secondary development on [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), which already reads 21 coding agents and writes real DSH sessions through the harness's own API. That codebase is kept unchanged.
+This repository is secondary development on [`dsh-chat-import`](https://github.com/Nwflower/dsh-chat-import), which already reads 21 coding agents and writes real DSH sessions through the harness's own API. That codebase is vendored here unmodified and pinned to the released v0.12.0; it is updated by re-applying upstream's changes, not by editing its files.
 
-The work runs on two tracks, and this document says which is which.
-
-**Offered upstream, not in this tree.** Seven fidelity fixes on the Codex path are being submitted as separate pull requests, so that the 18,000 people a month already running this code receive them. Two are merged (#44 session-generation discovery, #45 the `archived_sessions` root) and seven are open (#46–#53, plus #54). **None of them is in this repository's code yet.**
+**Offered upstream, now also in this tree.** Eleven pull requests went upstream so that the people already running this code receive the fixes. Seven were merged — #44, #45, #46, #48, #51, #52, #53. Four were closed without merging — #47, #49, #50, #54 — because upstream repaired the same platform failures by a route that keeps the Windows path coverage mine traded away. The v0.12.0 sync brings all of it into this tree.
 
 **Built here.** The export half — reading a Codex home read-only and writing a portable, verifiable archive before DSH is involved — is implemented in `packages/codex-archive`. The format is specified in [docs/archive-format.md](docs/archive-format.md), the staging for the importer in [docs/pipeline-design.md](docs/pipeline-design.md), and the package has its own suite (`npm test` in that directory: 43 tests, all passing) plus a smoke run against a real 5,538-rollout Codex home.
 
@@ -30,23 +28,27 @@ That smoke run, in full: 50 sessions and 778 environment files copied, **365 MB 
 
 ## The seven fixes
 
-Each is traceable to a measurement or a read of the harness source. Each is a separate pull request against upstream. The reasoning behind each is in [docs/fork-plan.md](docs/fork-plan.md).
+Each was traceable to a measurement or a read of the harness source, and each went upstream as its own pull request. The reasoning behind each is in [docs/fork-plan.md](docs/fork-plan.md). Two more fixes that were not on this list went upstream as well, both on the discovery side (#46, #51).
 
-| | Change | Why it was needed |
-|---|---|---|
-| **G1** | Codex `reasoning` records are kept | The readable part is 0.15% of the corpus and was discarded together with the ciphertext |
-| **G2** | The Codex `event_msg` channel is read | It was skipped wholesale, losing compaction and turn-abort signals |
-| **G3** | Codex compaction records are handled | Implemented for five other sources and missing for Codex |
-| **G4** | `~/.codex/archived_sessions/` is discovered | 398 rollouts on the test machine were unreachable |
-| **G5** | Current-generation DSH logs are readable | The pattern matched `session.jsonl.zstd` and not `session.v3.jsonl.zstd`, hiding **48 of 52** sessions |
-| **G6** | Unknown record types survive as `ignorable` events | DSH documents this as its compatibility mechanism; the Codex path did not use it |
-| **G7** | A recorded working directory can be remapped | A cross-machine archive lands ungrouped, by design |
+| | Change | Why it was needed | Outcome |
+|---|---|---|---|
+| **G1** | Codex `reasoning` records are kept | The readable part is 0.15% of the corpus and was discarded together with the ciphertext | Merged, #48 |
+| **G2** | The Codex `event_msg` channel is read | It was skipped wholesale, losing compaction and turn-abort signals | Merged, #52 — the turn-abort half. The compaction half is G3 |
+| **G3** | Codex compaction records are handled | Implemented for five other sources and missing for Codex | **Not delivered**, see below |
+| **G4** | `~/.codex/archived_sessions/` is discovered | 398 rollouts on the test machine were unreachable | Merged, #45 |
+| **G5** | Current-generation DSH logs are readable | The pattern matched `session.jsonl.zstd` and not `session.v3.jsonl.zstd`, hiding **48 of 52** sessions | Merged, #44 |
+| **G6** | Unknown record types survive as `ignorable` events | DSH documents this as its compatibility mechanism; the Codex path did not use it | **Not delivered**, see below |
+| **G7** | A recorded working directory can be remapped | A cross-machine archive lands ungrouped, by design | Merged, #53 |
 
-G5 is a defect in shipped behaviour with a one-line reproduction, and it affects most of any user's session store.
+G5 was a defect in shipped behaviour with a one-line reproduction, and it affected most of any user's session store.
+
+Two did not land. **G3** has no agreed semantics: Codex compaction carries no text summary, and its `replacement_history` is a full message array meaning "replaces the turns before this one", so handling it needs a stateful rewrite plus a default-retention policy nobody settled. **G6** is documented by DSH but unreachable: `ignorable` is honoured on read, and the public write path (`Session.append`) threads only `sourceEventSeqs` and `surfaceOp`, so an external writer cannot set it without hand-encoding the log.
+
+Upstream also repaired this class of platform failure on its own, in `f589018`, before four of the pull requests above could be merged.
 
 ## What is inherited
 
-The following is upstream's work, unchanged.
+The following is upstream's work as of v0.12.0, unmodified.
 
 **Import from 21 agents** — Claude Code, Codex, ChatGPT, Cursor, Gemini, Antigravity CLI, Reasonix, opencode, MiMo Code, ZCode, Grok Build, OpenClaw, Pi Coding Agent, Hermes, Kimi CLI and Kimi Code, Kilo Code, Qoder CLI, WorkBuddy, Qwen Work CN, DSH session logs, and content-detected local JSONL.
 
@@ -83,11 +85,9 @@ Every parameter, example and edge case is in [docs/USAGE.md](docs/USAGE.md).
 
 Two suites, and they are not comparable. They cover different code and neither one substitutes for the other.
 
-**Inherited (`/`, upstream's plugin).** **688 pass, 27 fail**, here and on a clean checkout of upstream v0.11.3. Upstream's CI fails on `main` at the `npm test` step on every recent run. The failures are inherited, not introduced here, and are not yet fixed.
+**Inherited (`/`, upstream's plugin, v0.12.0).** **753 pass, 0 fail**, matching a clean checkout of upstream v0.12.0, whose CI has been green since `1b2ef6e`. Earlier revisions of this repository carried 27 failures inherited from v0.11.3. The v0.12.0 sync removed them because upstream fixed them, not because anything here was patched around.
 
-At least one is a direct contradiction between code and test. `lib/import-core.mjs:261` deletes a cross-platform `cwd` so a session degrades to ungrouped rather than the entire import failing, and the comment says so, while the test asserts the Windows path survives.
-
-Treat **688 / 715** as the baseline for that suite. A change is not green because the suite is green.
+The `cwd` behaviour behind most of those failures is still deliberate. `lib/import-core.mjs` deletes a `cwd` the host would reject as non-absolute, so a session degrades to ungrouped rather than the whole import failing. The tests now compute the expected value with the same platform rule instead of asserting that the Windows path survives on every platform.
 
 **Export (`packages/codex-archive`).** **43 pass, 0 fail**, and the number that matters more is what the tests are for: every failure case in that suite is a defect that was first reproduced. Three came from doing this rather than from reading about it —
 

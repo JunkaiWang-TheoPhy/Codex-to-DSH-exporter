@@ -13,6 +13,7 @@ extended, and what that means for the licence.
 |---|---|
 | Licence | MIT |
 | Version at fork time | 0.11.3, published 2026-09-13 |
+| Current pin | 0.12.0, published 2026-09-15 |
 | Cadence | 24 releases in 31 days |
 | Tests | 73 `node:test` files, `--test-coverage-lines=75` gate |
 | Runtime deps | one (`fzstd`) |
@@ -181,12 +182,13 @@ That is additive rather than divergent: upstream's direct path keeps working.
 MIT permits derivative work and relicensing, with the copyright notice and
 permission notice preserved.
 
-- `LICENSE` keeps the original MIT text with **both** copyright lines.
+- `LICENSE` keeps the original MIT text and adds a third copyright line for the
+  new work, so the whole repository is MIT. This was chosen over the
+  AGPL-3.0-or-later default deliberately: the base is already MIT, the new work
+  has no reason to add a copyleft term on top of it, and one licence is simpler
+  to reason about downstream than two.
 - A `NOTICE` file records the origin, the fork point (version 0.11.3, commit
-  hash at fork), and the nature of the changes.
-- The repository's own new work is AGPL-3.0-or-later, which MIT permits
-  one-way. The combined repository therefore carries both, with the MIT
-  obligations scoped to the files derived from upstream.
+  hash at fork), the current pin (v0.12.0), and the nature of the changes.
 - Every file carried from upstream keeps a header naming its origin. A file
   that has been modified says so.
 
