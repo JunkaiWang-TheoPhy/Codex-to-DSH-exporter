@@ -238,7 +238,13 @@ not identical to one imported under a newer one.
 |---|---|
 | `event_msg/user_message` | duplicate of the response channel |
 | `event_msg/agent_message` | duplicate of the response channel |
-| `response_item/ghost_snapshot` | editor snapshot, no conversational content |
+
+`response_item/ghost_snapshot` was listed here. It does not belong: it is an
+unrecognized type, so it takes the `codex/unknown` path and is carried with
+`ignorable: true`. Asserted by the fixture in
+`packages/dsh-session-artifact/test/artifact.test.mjs`, which requires exactly one
+such row and its type name in `preserved`. Dropping it would have been silent
+data loss, which is what the unknown path exists to prevent.
 
 ## 5. Three traps in real data
 

@@ -142,7 +142,7 @@ run.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Read a Codex rollout | `parseRolloutFile`, `parseRolloutHead` | **Absent** | — |
+| Read a Codex rollout | `parseRolloutText` | Implemented (library) | `dsh-session-artifact` |
 | Convert to a DSH artifact | `synthesizeSession` | Implemented (library) | `dsh-session-artifact` |
 | Validate a converted artifact | `verifyArtifact`, 9 checks | Implemented | `dsh-session-artifact` |
 | Preview a conversion | `codex-to-dsh convert <rollout>` | **Absent** | — |
@@ -150,9 +150,9 @@ run.
 | Rewrite a recorded working directory | `cwdRewrite` option | Implemented (library) | `dsh-session-artifact` |
 | Cross-instance copy | Replaced by bundles between harness homes | **Absent** | — |
 
-The batch path is the gate described in `docs/design.md` §3. The library, the
-tests, and the single-file preview all exist so that opening the gate later is a
-small change rather than a new project.
+The batch path is the gate described in `docs/design.md` §3. The library and its
+tests exist, so opening the gate later is a small change rather than a new project.
+There is no preview command; the three rows above that name one are absent.
 
 ## 7. What this project adds that cockpit does not have
 
