@@ -195,9 +195,13 @@ verified in `packages/dsh-session-artifact/test/artifact.test.mjs`.
 
 ## 4. The mapping table
 
-Frozen in `DEFAULT_MAPPING`; printed by `codex-to-dsh mapping`. Treating a
-change here as a fidelity change is correct, because a session imported under
-an older table is not identical to one imported under a newer one.
+The table below is a specification, not a code symbol. There is no
+`DEFAULT_MAPPING` object in this repository and no `codex-to-dsh mapping` command
+to print it; both stood here before and neither was ever written. The mapping is
+carried by `lib/convert/codex.mjs` (vendored upstream, unmodified) and, for the
+artifact side, by `packages/dsh-session-artifact`. Treating a change here as a
+fidelity change is correct, because a session imported under an older table is
+not identical to one imported under a newer one.
 
 ### Translated
 
@@ -337,11 +341,16 @@ misleading.
 ## 8. Reproduction
 
 ```bash
-pnpm run build
-node --test packages/dsh-session-artifact/test/artifact.test.mjs
-codex-to-dsh convert fixtures/rollout-sample.jsonl
-codex-to-dsh mapping
+npm install
+npm run test:packages
 ```
 
-The `convert` command prints the artifact's accounting and runs all nine
-structural checks without writing anything.
+`test:packages` compiles `dsh-session-artifact` with `tsc` and then runs both
+package suites, including `packages/dsh-session-artifact/test/artifact.test.mjs`.
+
+Two commands stood here before — `pnpm run build`, `codex-to-dsh convert
+fixtures/rollout-sample.jsonl` and `codex-to-dsh mapping`. The first never
+existed (the repository has no pnpm workspace); the other two described a CLI
+that was never written. There is no `codex-to-dsh` executable here. The converter
+is a library function, and the accounting the `convert` command was said to print
+is asserted by the tests instead.

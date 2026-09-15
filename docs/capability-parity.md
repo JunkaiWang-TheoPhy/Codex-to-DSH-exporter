@@ -8,6 +8,14 @@ The point of the matrix is honesty about gaps. A feature listed as *designed*
 has types, an interface, and tests against fixtures but no command that runs it
 against real data. A feature listed as *absent* is not in the repository.
 
+**Correction (2026-09-15).** 31 rows here were labelled *Implemented* against
+four modules that were never written: `dsh-session-store`, `codex-rollout`,
+`apps/cli` and `dsh-plugin-codex-history`. By this document's own definition those
+features are *absent*, and they have been relabelled. What remains *Implemented*
+is owned by `dsh-session-artifact`, which exists and has a suite. The `Counterpart
+here` column still names the planned API, because the plan is what these rows were
+written from; the `Owner` column now reads `—` where nothing owns it.
+
 **Licence note.** `cockpit-tools` declares `CC-BY-NC-SA-4.0` and has no LICENSE
 file at its repository root. Nothing in this repository is derived from its
 code. The feature list below was read from its user interface and from the
@@ -18,12 +26,12 @@ implementation here is written from scratch against DSH's own storage format.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| List sessions grouped by workspace | `SessionStore.workspaces()` | Implemented | `dsh-session-store` |
-| Relative timestamps per group and session | `ago()` in the CLI | Implemented | `apps/cli` |
-| Per-session size | `SessionRecord.bytes` | Implemented | `dsh-session-store` |
+| List sessions grouped by workspace | `SessionStore.workspaces()` | **Absent** | — |
+| Relative timestamps per group and session | `ago()` in the CLI | **Absent** | — |
+| Per-session size | `SessionRecord.bytes` | **Absent** | — |
 | Filter by conversation type | Not applicable: DSH stores one session kind | Absent | — |
-| Refresh | `SessionStore.refresh()` | Implemented | `dsh-session-store` |
-| Cached listing without rescanning | Index keyed by `(path, size, mtimeMs)` | Implemented | `dsh-session-store` |
+| Refresh | `SessionStore.refresh()` | **Absent** | — |
+| Cached listing without rescanning | Index keyed by `(path, size, mtimeMs)` | **Absent** | — |
 
 Two differences are structural rather than missing work.
 
@@ -43,13 +51,13 @@ does not have.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Multi-select | Command arguments: `codex-to-dsh trash <id> <id> …` | Implemented | `apps/cli` |
-| Select all | Omitting arguments selects every session | Implemented | `apps/cli` |
-| Copy to instance | `exportBundle` + `importBundle` into another harness home | Implemented | `dsh-session-store` |
-| Move to trash | `SessionStore.trash(ids)` | Implemented | `dsh-session-store` |
-| Restore from trash | `SessionStore.restore(ids)` | Implemented | `dsh-session-store` |
-| Empty trash | `SessionStore.emptyTrash()`, gated behind `--yes` | Implemented | `dsh-session-store` |
-| Trash listing | `SessionStore.listTrash()` | Implemented | `dsh-session-store` |
+| Multi-select | Command arguments: `codex-to-dsh trash <id> <id> …` | **Absent** | — |
+| Select all | Omitting arguments selects every session | **Absent** | — |
+| Copy to instance | `exportBundle` + `importBundle` into another harness home | **Absent** | — |
+| Move to trash | `SessionStore.trash(ids)` | **Absent** | — |
+| Restore from trash | `SessionStore.restore(ids)` | **Absent** | — |
+| Empty trash | `SessionStore.emptyTrash()`, gated behind `--yes` | **Absent** | — |
+| Trash listing | `SessionStore.listTrash()` | **Absent** | — |
 
 **Trash design differs on purpose.** Cockpit uses the operating system trash.
 This project moves the session directory into `<home>/session-trash/` alongside
@@ -62,11 +70,11 @@ depend on a platform API being available.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Search by title | `SessionStore.search({ text })` | Implemented | `dsh-session-store` |
-| Search Codex history by prompt | `buildRolloutIndex` + `searchIndex` | Implemented | `codex-rollout` |
-| Search by workspace | `search({ cwd })` and substring matching on the path | Implemented | both |
-| Search by session id | Substring matching on the id | Implemented | both |
-| Time-range filter | `search({ since, until })` | Implemented | `dsh-session-store` |
+| Search by title | `SessionStore.search({ text })` | **Absent** | — |
+| Search Codex history by prompt | `buildRolloutIndex` + `searchIndex` | **Absent** | — |
+| Search by workspace | `search({ cwd })` and substring matching on the path | **Absent** | — |
+| Search by session id | Substring matching on the id | **Absent** | — |
+| Time-range filter | `search({ since, until })` | **Absent** | — |
 | Full-text search over message bodies | Not implemented — see below | Absent | — |
 
 **Titles need a real source.** DSH stores a session title as a `session/title`
@@ -85,13 +93,13 @@ precisely because it does not read bodies.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Preview an export | `exportBundle` writes a manifest; the CLI prints each entry and digest | Implemented | `dsh-session-store` |
-| Export sessions | `exportBundle(store, ids, outDir)` | Implemented | `dsh-session-store` |
-| Preview an import | `importBundle(..., { apply: false })` | Implemented | `dsh-session-store` |
-| Import sessions | `importBundle(..., { apply: true })` | Implemented | `dsh-session-store` |
-| Integrity verification | SHA-256 per artifact, enforced before an apply | Implemented | `dsh-session-store` |
-| Verify a bundle without importing | `codex-to-dsh bundle <dir>` | Implemented | `apps/cli` |
-| Cross-machine path correction | Import re-derives the destination path from each artifact's header | Implemented | `dsh-session-store` |
+| Preview an export | `exportBundle` writes a manifest; the CLI prints each entry and digest | **Absent** | — |
+| Export sessions | `exportBundle(store, ids, outDir)` | **Absent** | — |
+| Preview an import | `importBundle(..., { apply: false })` | **Absent** | — |
+| Import sessions | `importBundle(..., { apply: true })` | **Absent** | — |
+| Integrity verification | SHA-256 per artifact, enforced before an apply | **Absent** | — |
+| Verify a bundle without importing | `codex-to-dsh bundle <dir>` | **Absent** | — |
+| Cross-machine path correction | Import re-derives the destination path from each artifact's header | **Absent** | — |
 
 **Bundle format.** A directory holding `manifest.json` and
 `files/<NNNN>-<sessionId>/<artifact>`. Artifacts are copied byte-for-byte, never
@@ -109,10 +117,10 @@ present is skipped, never overwritten.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Repair visibility | `SessionStore.diagnose()` reports drift; `refresh()` reconciles it | Implemented | `dsh-session-store` |
-| Report missing and extra entries | `{ missingArtifact, staleIndex }` | Implemented | `dsh-session-store` |
-| Report generation drift | `codex-to-dsh doctor` | Implemented | `apps/cli` |
-| Report unreadable artifacts | `refresh()` returns `unreadable[]` | Implemented | `dsh-session-store` |
+| Repair visibility | `SessionStore.diagnose()` reports drift; `refresh()` reconciles it | **Absent** | — |
+| Report missing and extra entries | `{ missingArtifact, staleIndex }` | **Absent** | — |
+| Report generation drift | `codex-to-dsh doctor` | **Absent** | — |
+| Report unreadable artifacts | `refresh()` returns `unreadable[]` | **Absent** | — |
 
 **The problem is smaller here, and that is worth stating.** Cockpit's "repair
 visibility" exists because Codex keeps three sources of truth that drift apart:
@@ -134,13 +142,13 @@ run.
 
 | Capability | Counterpart here | Status | Owner |
 |---|---|---|---|
-| Read a Codex rollout | `parseRolloutFile`, `parseRolloutHead` | Implemented | `codex-rollout` |
+| Read a Codex rollout | `parseRolloutFile`, `parseRolloutHead` | **Absent** | — |
 | Convert to a DSH artifact | `synthesizeSession` | Implemented (library) | `dsh-session-artifact` |
 | Validate a converted artifact | `verifyArtifact`, 9 checks | Implemented | `dsh-session-artifact` |
-| Preview a conversion | `codex-to-dsh convert <rollout>` | Implemented, read-only | `apps/cli` |
+| Preview a conversion | `codex-to-dsh convert <rollout>` | **Absent** | — |
 | Batch conversion into a real home | — | **Absent by design** | — |
 | Rewrite a recorded working directory | `cwdRewrite` option | Implemented (library) | `dsh-session-artifact` |
-| Cross-instance copy | Replaced by bundles between harness homes | Implemented | `dsh-session-store` |
+| Cross-instance copy | Replaced by bundles between harness homes | **Absent** | — |
 
 The batch path is the gate described in `docs/design.md` §3. The library, the
 tests, and the single-file preview all exist so that opening the gate later is a

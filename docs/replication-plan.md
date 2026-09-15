@@ -216,6 +216,13 @@ successful.
 
 ## 6. Milestones
 
+**Status (2026-09-15).** M0 was never produced: there is no `docs/replication.md`,
+and the Codex-field table in §1 lives here instead. Parts of M1 and M3 were built
+— `packages/codex-archive` exports an environment and session archive read-only,
+with a manifest, digests and a credential scan, and it was run once against a real
+5,538-rollout `~/.codex`. M2, M4 and M5 were not attempted. The table below is the
+plan as written, not a record of what happened.
+
 | # | Deliverable | Gate |
 |---|---|---|
 | M0 | `docs/replication.md` frozen: the table in §1 and every unmapped field named | A reviewer can point at any Codex field and find its disposition |

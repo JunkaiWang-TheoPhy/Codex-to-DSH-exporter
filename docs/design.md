@@ -94,34 +94,40 @@ explicit.
 
 ## 4. Architecture
 
+What exists in this repository:
+
 ```
 packages/
-  codex-rollout/          Codex rollout JSONL -> one normalized entry union.
-                          Also builds the searchable history index.
+  codex-archive/          Reads a Codex home read-only and writes a portable,
+                          verifiable archive. Has its own suite and CLI.
   dsh-session-artifact/   Storage-path derivation, artifact construction,
                           structural validation. Holds the invariants.
-  dsh-session-store/      Discovery, listing, search, trash, bundles, diagnose.
-                          Reads a harness home without booting the harness.
-apps/
-  cli/                    codex-to-dsh <env|mapping|list|search|index|export|
-                            bundle|trash|convert|doctor>
-plugins/
-  dsh-plugin-codex-history/   Three read-only agent tools.
 ```
+
+The plugin at the repository root is upstream's, vendored unmodified — see
+[NOTICE](../NOTICE) for the pin and the change list.
+
+### What was planned and is not here
+
+An earlier revision of this section drew a larger tree and described it in the
+present tense. None of the following was ever committed:
+
+| Planned | Status |
+|---|---|
+| `packages/codex-rollout/` | Deleted, per plan. Its read side was superseded by upstream's `lib/convert/codex.mjs`, which this repository extends instead. |
+| `packages/dsh-session-store/` | Never written. |
+| `apps/cli/` | Never written. There is no `codex-to-dsh` executable. |
+| `plugins/dsh-plugin-codex-history/` | Never written. |
+
+The descriptions that stood here — a searchable history index, a store that reads
+a harness home without booting the harness, three read-only agent tools — were
+plans. Leaving them in the present tense is how a design document starts lying.
 
 ### The dependency direction is deliberate
 
-`codex-rollout` knows nothing about the harness. It is the read side, and the
-same intermediate representation feeds both the history index and the
-converter. This is what makes the index cheap to build and the converter
-testable in isolation.
-
 `dsh-session-artifact` owns every fact about the harness's storage format. No
-other package computes a session path.
-
-`dsh-session-store` reads a harness home using only `node:fs` and `node:zlib`.
-It does not load the harness, which is what lets it run as a CLI against a home
-that is not currently booted, and as a plugin inside one that is.
+other package computes a session path. The invariants it holds were established
+by running DSH's real validators rather than by reading its types.
 
 ## 5. Engineering contracts
 
