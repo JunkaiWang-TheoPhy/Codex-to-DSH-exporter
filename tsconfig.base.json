@@ -1,0 +1,21 @@
+{
+  // Shared compiler options for packages/*.
+  //
+  // The root tsconfig.json is a separate, noEmit config that only type-checks the
+  // plugin's index.d.ts, and it does not extend this file.
+  //
+  // The two import options are required by the source style in
+  // packages/dsh-session-artifact: its modules import each other with explicit
+  // `.ts` specifiers, which tsc only accepts while emitting if it is also told to
+  // rewrite them to `.js` in the output (TypeScript 5.7+).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  }
+}
