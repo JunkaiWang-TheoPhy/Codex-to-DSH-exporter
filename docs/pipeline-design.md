@@ -53,48 +53,122 @@ stage needs a decision except credential refusal.
 
 ## 4. Stage 2 — classify
 
-The only stage that makes semantic judgements, and the only one that uses a
-model.
+Deterministic scoring. No model.
 
-### Why a model rather than rules
+### Why an algorithm and not a model
 
-Rule matching finds a Codex reference; it cannot tell whether the reference
-matters. A skill that mentions `~/.codex` in a troubleshooting paragraph is
-portable. One that shells out to `codex exec` is not. Measured on the author's
-home: a keyword rule sorts 33 of 85 skills as Codex-bound, and the boundary is
-not that clean in either direction.
+Four properties, all of which a model verdict gives up:
 
-### What it emits
+- **Testable.** A scorer is a function with fixtures. Its verdicts are unit
+  tested, and a regression is a failing assertion rather than a subtly different
+  paragraph.
+- **Reproducible.** The same archive yields the same proposal byte for byte, so
+  a diff between two proposals means the input changed, not that the model had a
+  different day.
+- **Auditable.** Every verdict cites the rule that produced it and the line that
+  triggered it. A model's reason is a claim about its own reasoning; a scorer's
+  reason is the computation.
+- **Free.** Classifying 85 skills and a 650-line document costs no tokens and no
+  network round trip.
 
-A proposal, never a change:
+**Correction.** Earlier revisions of this document proposed a model for this
+stage, on the argument that a keyword rule cannot tell a passing mention of
+`~/.codex` from a shell-out to `codex exec`. That argument is sound against a
+naive keyword grep and wrong as a conclusion. The distinction is structural, and
+structure is parseable: an invocation lives in a code fence or on an imperative
+line, a mention lives in prose.
+
+### The shape it emits
+
+A scored proposal, never a change:
 
 ```json
 {
   "surface": "skill",
   "id": "deep-interview",
-  "portable": false,
-  "confidence": "high",
-  "evidence": "SKILL.md step 3 invokes `codex exec --sandbox read-only`; the flow has no DSH equivalent",
-  "suggestedDisposition": "unmapped"
+  "score": 7.5,
+  "verdict": "codex-bound",
+  "threshold": 3.0,
+  "evidence": [
+    { "line": 42, "weight": 3.0, "token": "codex exec",
+      "context": "fenced", "text": "codex exec --sandbox read-only \"$task\"" },
+    { "line": 43, "weight": 3.0, "token": "codex exec",
+      "context": "fenced", "text": "  --output-last-message out.txt" },
+    { "line": 12, "weight": 0.5, "token": "~/.codex",
+      "context": "prose", "text": "the transcripts live under ~/.codex/" }
+  ]
 }
 ```
 
-Three properties are mandatory:
+The `evidence` array is the whole point. It is what makes a threshold verdict
+reviewable: a person sees the three lines that produced 7.5 and can disagree with
+the weights rather than with the outcome.
 
-1. **A reason, quoting the evidence.** A verdict without a quotable line is not
-   reviewable.
-2. **A confidence.** Low-confidence verdicts are surfaced first.
-3. **No side effects.** The stage writes the proposal and nothing else.
+### The scorer, surface by surface
 
-### Reproducibility
+**Skills.** Tokenise each `SKILL.md`. For every occurrence of a Codex-specific
+token (`codex exec`, `codex resume`, `codex://`, `~/.codex`, `$CODEX_HOME`,
+`oh-my-codex`, `omx `), weight by context:
 
-Model verdicts are not deterministic, so the program never treats them as
-authoritative. The proposal is a file. It can be edited by hand, re-run, and
-diffed. `load` reads the proposal, not the model.
+| Context | Weight | Rationale |
+|---|---|---|
+| inside a fenced code block | 3.0 | an executable instruction |
+| on an imperative line, or inside a numbered step | 2.0 | an instruction in prose |
+| in a heading | 1.0 | names the subject |
+| in a sentence | 0.5 | a mention |
 
-A hand-edited proposal is the intended workflow, not a workaround: the model
-does the first pass over dozens of items, and the person overrides the handful
-it gets wrong.
+`score = Σ weight`, verdict at `score >= threshold`. Different tokens can carry
+different base weights; `codex exec` is a stronger signal than the string
+`~/.codex`, and the table says so explicitly rather than burying it in a regex.
+
+**Rules.** A parser, not a scorer. `prefix_rule(pattern=[…], decision="…")` is a
+structured literal and is parsed as one:
+
+- `pattern[0]` is a shell binary (`/bin/zsh`, `/bin/bash`, `sh`, …) and
+  `pattern[1]` is `-c` or `-lc` → **shell-wrapped**, no argv-prefix match is
+  possible against what the harness sees → `unmapped` with a reason.
+- otherwise → an `argv-prefix` rule, copied literally.
+
+There is no judgement in this step and a model would only add variance.
+
+**`AGENTS.md`.** Split on headings, score each section with the same context
+weighting, and emit per-section verdicts:
+
+```json
+{ "section": "读取 Codex 线程（codex://threads/<id>）", "line": 312, "score": 14.0,
+  "verdict": "codex-bound", "tokens": { "codex://": 6, "codex": 8 } }
+```
+
+A 650-line document becomes roughly twenty scored sections, and a person reviews
+the two or three near the threshold rather than the whole thing.
+
+### Where the algorithm is honestly weaker
+
+Stated because a scorer's blind spot is invisible otherwise:
+
+- **A skill that depends on Codex without naming it is missed.** "Run the local
+  agent CLI to fetch the thread" contains no token. The scorer rates it clean.
+- **A paraphrase is missed.** `~/.codex/` written as `${HOME}/.codex/`.
+- **Weights are a judgement.** They are chosen, documented, and tunable, which is
+  better than hidden, but they are not derived from anything.
+
+Two mitigations, both cheap:
+
+1. **A per-surface override file.** Any item can be pinned portable or
+   codex-bound by hand. The file is read before the scorer and wins.
+2. **The near-threshold band is reported separately.** Items scoring between
+   `threshold/2` and `threshold*2` are listed as `uncertain` so the review
+   focuses where the scorer is least confident, instead of presenting a hard
+   yes/no at an arbitrary line.
+
+### The optional model pass
+
+A model is still useful for one thing, and it is not classification: **rewriting
+the selected `AGENTS.md` sections so they read coherently once the Codex-specific
+material is removed.** That is prose generation, it operates on text an algorithm
+already chose, and it is off by default.
+
+The program never uses a model to decide what to keep.
 
 ## 5. Stage 3 — load, surface by surface
 
@@ -203,10 +277,14 @@ destination root is shared with other agents on the machine.
 
 ### 5.6 `AGENTS.md`
 
-Archive keeps it verbatim. The loader runs the same classification stage over it
-and emits an **extraction proposal**: the sections judged portable, quoting each
-section heading as evidence, plus the sections judged Codex-specific with their
-reasons.
+Archive keeps it verbatim. The classify stage splits it on headings and scores
+each section with the same context weighting as a skill, producing per-section
+verdicts with the tokens that drove them. A person reviews the two or three
+sections near the threshold rather than 650 lines.
+
+Optionally, and off by default, a model rewrites the selected sections so they
+read coherently once the Codex-specific material is gone. The selection is the
+algorithm's; the model only touches prose that was already chosen.
 
 The loader writes the extracted text to `AGENTS.codex.md` and prints a diff
 against the target `~/.dsh/AGENTS.md`. It does not touch that file. A tool that
@@ -266,18 +344,16 @@ Two artefacts, not one.
 part of this program, not generated: the translation target should be a fixed,
 reviewable interface rather than per-import generated code.
 
-#### What the agent does here
+#### This is a parser, not a judgement
 
-Not semantic compression. Two narrower jobs, both of which need judgement:
+`prefix_rule(pattern=[…], decision="…")` is a structured literal. Splitting the
+direct forms from the shell-wrapped ones is a lookup on `pattern[0]` against a
+list of shell binaries, and there is no step here where a model would produce a
+better answer than a parser — only a more variable one.
 
-1. **Translating the match semantics.** Codex's rules are argv-prefix matches,
-   but the source mixes direct forms (`["ps","-p"]`) with shell-wrapped forms
-   (`["/bin/zsh","-lc","<whole command>"]`). Deciding which form a given rule is,
-   and what the matcher will actually see, is a reading task.
-2. **Deciding what is unmappable.** A rule whose pattern is a shell wrapper with
-   an embedded command string cannot be matched by argv prefix against the
-   command the harness sees. It belongs in `unmapped` with a reason, not
-   silently mistranslated into a rule that never fires.
+The rules that do not survive are reported rather than dropped, with the reason
+being the parse result itself: the pattern is a shell wrapper, so argv-prefix
+matching against the command the harness sees cannot fire.
 
 #### Two constraints to state plainly
 
@@ -306,7 +382,7 @@ Each stage asserts what would otherwise fail silently.
 | Stage | Check |
 |---|---|
 | export | The Codex home is byte-identical afterwards. Credentials appear nowhere in the archive. Every archived file's digest matches its manifest entry. |
-| classify | Every source item has exactly one proposal. Every proposal has a non-empty reason. |
+| classify | Every source item has exactly one proposal. Every proposal cites at least one evidence line. Scorer fixtures cover each token, each context weight, the threshold boundary, and the override file. |
 | load | Every written session passes `restoreReleasedV3Artifact`; its derived path equals the written path; its `ignorable` count equals the proposal's. Every `unmapped` and `dropped` field has a reason. No file outside the target roots was touched. |
 
 The `ignorable` count check is the one that catches silent fidelity regression:
