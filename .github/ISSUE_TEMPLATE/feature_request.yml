@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a new import source, fidelity upgrade, or workflow improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Source / tool shape, parameters, expected result shape.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How would we verify it works? (Synthetic fixtures, expected statuses…)

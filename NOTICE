@@ -1,0 +1,43 @@
+Codex-to-DSH-exporter
+=====================
+
+This project is secondary development on an existing open-source project.
+
+Origin
+------
+dsh-chat-import — https://github.com/Nwflower/dsh-chat-import
+Licence: MIT, Copyright (c) 2026 Nwflower, Copyright (c) 2026 Scarlett
+
+Fork point
+----------
+Version 0.11.3, published 2026-09-13.
+
+The `lib/`, `bin/`, `index.mjs`, `convert.mjs`, `export.mjs` and
+`cordis.patch.yml` trees are derived from that project. Their MIT licence and
+both copyright notices are preserved in LICENSE, as the licence requires.
+
+What changed
+------------
+Each change is recorded in docs/fork-plan.md with the measurement or source
+reading that motivated it. In summary:
+
+- G1  Codex reasoning records are preserved, minus the opaque ciphertext.
+- G2  The Codex event_msg channel is read rather than ignored wholesale.
+- G3  Codex compaction records are handled.
+- G4  ~/.codex/archived_sessions/ is discovered.
+- G5  Current-generation DSH session logs (session.vN.jsonl.zstd) are readable.
+      Previously 48 of 52 sessions on the test machine were invisible.
+- G6  Unknown record types are preserved as ignorable events.
+- G7  A recorded working directory can be remapped.
+
+Added, not derived
+------------------
+The export half has no upstream counterpart: `packages/codex-archive` reads a
+Codex home read-only and writes a portable archive, and
+`packages/dsh-session-artifact` is the reference implementation of the DSH
+session format used to validate it. The `docs/` tree is this project's own.
+
+Upstream contributions
+----------------------
+The changes are kept as separable commits so they can be offered upstream,
+which states in CONTRIBUTING.md that PRs are welcome for fidelity upgrades.

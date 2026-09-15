@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a defect — what happened vs what should have happened
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Source format + path shape (synthetic paths only — no real transcripts), the import call, and the result.
+      placeholder: |
+        1. import_claude({ path: "~/.claude/projects/<slug>/<sessionId>.jsonl" })
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: dsh version, plugin version, OS, Node.js version
+      placeholder: dsh 0.1.0-rc.6 · dsh-chat-import 0.4.0 · Windows 11 · Node 22.13
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output / logs
+      description: The import report or error output. Do not paste real conversation content — synthetic or redacted only.

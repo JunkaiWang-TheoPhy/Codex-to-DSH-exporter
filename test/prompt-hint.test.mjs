@@ -1,0 +1,147 @@
+// test/prompt-hint.test.mjs — REQ-53 新会话开始迁移提示
+//
+// mock ctx（真实 node:fs 包装供 discovery host）+ 模拟 agent/session-start：
+// cwd 下存在可导入会话 → systemPrompt.context 注册提示 + hints.json 记忆；
+// 同一 cwd 只提示一次；无历史 / 无 cwd / env 关闭时不提示。
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, statSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { registerSessionHint } from '../lib/prompt-hint.mjs'
+
+// 最小 codex rollout（首记录 session_meta 带 payload 为格式签名；discovery 识别 + 找到即算可导入）
+function codexRollout() {
+  return [
+    JSON.stringify({ type: 'session_meta', timestamp: '2026-08-14T00:00:00Z', payload: { id: 'rx-1', cwd: '/demo' } }),
+    JSON.stringify({ type: 'response_item', timestamp: '2026-08-14T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] } }),
+  ].join('\n') + '\n'
+}
+
+function makeCtx() {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-hint-'))
+  const registryDir = join(home, 'dsh-chat-import')
+  const listeners = new Map() // event → [handlers]
+  const sessions = new Map()
+
+  const fs = {
+    async resolve(path) { return { targetKey: path, displayPath: path } },
+    async stat(target) {
+      try {
+        const st = statSync(target.targetKey)
+        return { type: st.isDirectory() ? 'directory' : 'file', size: st.size, mtimeMs: st.mtimeMs }
+      } catch { return undefined }
+    },
+    async readText(target) { return readFileSync(target.targetKey, 'utf8') },
+    async listDir(target) {
+      const names = readdirSync(target.targetKey, { withFileTypes: true })
+      return names.map((d) => ({
+        name: d.name,
+        type: d.isDirectory() ? 'directory' : 'file',
+        target: { targetKey: join(target.targetKey, d.name), displayPath: join(target.targetKey, d.name) },
+      }))
+    },
+    processPath(target) { return target.targetKey },
+  }
+  const persistence = {
+    async create(meta) { sessions.set(meta.id, { header: meta, events: [] }) },
+    async append(id, events) { const s = sessions.get(id); if (s) s.events.push(...events) },
+    async list() { return [...sessions.values()].map((s) => s.header) },
+    async locate() { return undefined },
+    async readFrom() { return undefined },
+  }
+  const ctx = {
+    fs,
+    sessionPersistence: persistence,
+    tools: { register() { return () => {} } },
+    get(service) {
+      if (service === 'sessionPersistence') return persistence
+      return undefined
+    },
+    on(event, handler) {
+      const list = listeners.get(event) || []
+      list.push(handler)
+      listeners.set(event, list)
+      return () => {}
+    },
+  }
+  return { ctx, registryDir, sessions, listeners }
+}
+
+// 触发一次 agent/session-start（模拟 Scoped<Agent> payload）；handler 是 async（内部
+// await loadHints / discoverSessions），必须 await 完成后再断言。
+async function fireSessionStart(env, cwd, contextSpy) {
+  const agent = {
+    session: { header: { cwd } },
+    ctx: { systemPrompt: { context: contextSpy } },
+  }
+  for (const h of env.listeners.get('agent/session-start') || []) await h({ agent })
+}
+
+// 造一个 codex rollout 历史：cwd/.codex 布局——用 path=cwd 扫描时 buildTargets
+// 把 cwd 作 codex 的 target，scanFormat 在 target 下找 YYYY/MM/DD/rollout-*.jsonl。
+function seedCodexHistory(root) {
+  const dir = join(root, '2026', '08', '14')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'rollout-h1.jsonl')
+  writeFileSync(file, codexRollout(), 'utf8')
+  return file
+}
+
+test('REQ-53 迁移提示：cwd 有可导入历史 → 注入提示并记记忆', async () => {
+  const env = makeCtx()
+  const cwd = mkdtempSync(join(tmpdir(), 'dsh-hint-cwd-'))
+  seedCodexHistory(cwd)
+  registerSessionHint(env.ctx, env.registryDir)
+  const contexts = []
+  await fireSessionStart(env, cwd, (def) => contexts.push(def))
+
+  assert.equal(contexts.length, 1, '应注册一条 PromptContext')
+  assert.equal(contexts[0].name, 'chat-import-migration-hint')
+  assert.ok(contexts[0].text.includes('可导入'), '提示含可导入计数: ' + contexts[0].text)
+  assert.ok(contexts[0].text.includes('/import'), '提示指引命令: ' + contexts[0].text)
+  // per-project 记忆落盘：hints.json 记 cwd
+  const hints = JSON.parse(readFileSync(join(env.registryDir, 'hints.json'), 'utf8'))
+  assert.equal(typeof hints[cwd], 'number', 'hints.json 记 cwd')
+  // 再次触发同一 cwd → 不再注入（记忆生效）
+  await fireSessionStart(env, cwd, (def) => contexts.push(def))
+  assert.equal(contexts.length, 1, '同一 cwd 只提示一次')
+})
+
+test('REQ-53 迁移提示：无历史的工作区不提示、不写记忆', async () => {
+  const env = makeCtx()
+  const cwd = mkdtempSync(join(tmpdir(), 'dsh-hint-empty-'))
+  registerSessionHint(env.ctx, env.registryDir)
+  const contexts = []
+  await fireSessionStart(env, cwd, (def) => contexts.push(def))
+  assert.equal(contexts.length, 0, '无历史不提示')
+  assert.throws(() => readFileSync(join(env.registryDir, 'hints.json')), '不写 hints.json')
+})
+
+test('REQ-53 迁移提示：无 cwd 的会话不提示', async () => {
+  const env = makeCtx()
+  const cwd = mkdtempSync(join(tmpdir(), 'dsh-hint-nocwd-'))
+  seedCodexHistory(cwd)
+  registerSessionHint(env.ctx, env.registryDir)
+  const contexts = []
+  await fireSessionStart(env, undefined, (def) => contexts.push(def))
+  assert.equal(contexts.length, 0, '无 cwd 不提示')
+})
+
+test('REQ-53 迁移提示：DSH_IMPORT_SESSION_HINT=0 关闭', async () => {
+  const prev = process.env.DSH_IMPORT_SESSION_HINT
+  process.env.DSH_IMPORT_SESSION_HINT = '0'
+  try {
+    const env = makeCtx()
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-hint-off-'))
+    seedCodexHistory(cwd)
+    registerSessionHint(env.ctx, env.registryDir)
+    const contexts = []
+    await fireSessionStart(env, cwd, (def) => contexts.push(def))
+    assert.equal(contexts.length, 0, 'env 关闭时不提示')
+  } finally {
+    if (prev === undefined) delete process.env.DSH_IMPORT_SESSION_HINT
+    else process.env.DSH_IMPORT_SESSION_HINT = prev
+  }
+})

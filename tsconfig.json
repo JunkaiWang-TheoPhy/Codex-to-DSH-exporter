@@ -1,14 +1,11 @@
 {
-  "files": [],
-  "references": [
-    {
-      "path": "packages/codex-rollout"
-    },
-    {
-      "path": "packages/dsh-session-artifact"
-    },
-    {
-      "path": "packages/codex-archive"
-    }
-  ]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false
+  },
+  "include": ["index.d.ts"]
 }

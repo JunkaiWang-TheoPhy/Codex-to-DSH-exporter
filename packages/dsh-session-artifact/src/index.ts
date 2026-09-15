@@ -41,14 +41,6 @@ export {
 } from './paths.ts';
 
 export {
-  DEFAULT_MAPPING,
-  synthesizeSession,
-  type SynthesizeOptions,
-  type SynthesizeResult,
-  type Treatment,
-} from './synthesize.ts';
-
-export {
   parseArtifact,
   verifyArtifact,
   type VerificationReport,
