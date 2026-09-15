@@ -151,7 +151,7 @@ can violate it. Contiguity also means the importer's sequence numbers are
 independent of Codex's, which is what makes the mapping order-driven rather
 than identity-driven.
 
-### C5 — the trap in "preserve everything"
+### C5 — a capability difference between the two write paths
 
 `dsh-session/types/surface.js` reads:
 
@@ -159,9 +159,39 @@ than identity-driven.
 if (!KNOWN_SESSION_EVENT_TYPES.has(event.type) && event.ignorable === true) ...
 ```
 
-An unrecognized type without the flag is a fold error. A naive
-"preserve everything" importer therefore fails on exactly the data it was
-trying hardest to keep. Every preserved event in this project carries the flag.
+An unrecognized type without the flag is a fold error, so a naive
+"preserve everything" importer fails on exactly the data it was trying hardest
+to keep.
+
+**What matters is that the flag is not reachable from every write path.** The
+read side refuses unknown types unless `event.ignorable === true`
+(`dsh-session-persistence/lib/index.js:1117-1121`). The public write side cannot
+supply it: `Session.append` threads only `sourceEventSeqs` and `surfaceOp`
+(`dsh-session/lib/index.js:1437-1447`), and the generated vocabulary file states
+that out-of-repo plugin events "are outside this list by construction; a
+registration surface for them is deferred until such a consumer exists".
+
+So the two write paths differ in what they can express:
+
+| Write path | Can set `ignorable` | Must derive the storage path |
+|---|---|---|
+| `SessionPersistence.create` + `append`, or `agents.create` | **No** | No — the host does |
+| Hand-encoded artifact | **Yes** | Yes |
+
+Two plugin authors met this wall from opposite sides, which is the evidence that
+it is structural rather than a local mistake. `@morlay/ui-conversation-message-actions`
+names it in a source comment and bypasses `append` to write the envelope itself.
+`dsh-omni-router` 2.4.0 calls `session.append('omni/router', …)` normally and
+therefore emits an unknown type with no marker; those sessions are refused at
+load by this build.
+
+**Correction.** An earlier revision of this document described the flag as a
+deliberate choice, and described `dsh-chat-import` as deliberately declining to
+use it. That was wrong: it writes through the host API, where the flag is not
+available. Its behaviour is constrained by its architecture, not chosen.
+
+This repository hand-encodes, so its preserved events do carry the flag —
+verified in `packages/dsh-session-artifact/test/artifact.test.mjs`.
 
 ## 4. The mapping table
 

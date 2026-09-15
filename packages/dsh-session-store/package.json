@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh.git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh-exporter.git",
     "directory": "packages/dsh-session-store"
   },
   "main": "dist/index.js",

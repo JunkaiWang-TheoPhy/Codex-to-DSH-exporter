@@ -254,3 +254,48 @@ obvious guess:
   development (`0.1.0-rc.7` and `0.1.5-rc.1`) and their validators differ in
   strictness. The repository does not pin a harness version, and the format is
   a release candidate. Re-run `convert` against the fixture after upgrading.
+
+## 9. Positioning: this is an exporter
+
+Established 2026-09-15, after surveying the destination ecosystem.
+
+The project is an **exporter**. It stands on the Codex side, reads a Codex home
+read-only, and produces a portable, verifiable, self-describing archive. A DSH
+importer is a separate program that reads that archive.
+
+That single sentence settles the scope, and it settles it the same way three
+independent lines of reasoning did:
+
+| Module | Under the exporter positioning |
+|---|---|
+| `packages/codex-rollout` | **Core.** Reading `~/.codex` is the job. |
+| `docs/archive-format.md` | **The product.** The archive is what ships. |
+| `packages/dsh-session-artifact` | Moves to the importer side. Kept here as the reference implementation of the target format. |
+| `packages/dsh-session-store` | **Out.** DSH-side, and its list/search was a weaker subset of the harness's built-in `sessionQuery`. |
+| `plugins/dsh-plugin-codex-history` | **Out.** A DSH-side plugin contradicts standing on the Codex side. |
+
+### Why the position is open
+
+Measured on the curated catalogue of 3,632 DSH plugins: exactly **one**
+describes itself as reading `~/.codex`, and it is a two-way bridge rather than an
+exporter. Everything else in that ecosystem runs inside the harness. An exporter
+runs where the data is.
+
+Two further facts support the framing. The nearest competitor, `dsh-chat-import`
+(★161, 18,714 monthly downloads, 24 releases in 31 days), reads and writes in one
+opaque step: it needs DSH installed and running, and if it fails partway there is
+no artifact to inspect. And it cannot set `ignorable` on preserved events,
+because it writes through a host API that does not expose the flag — so the
+reasoning and telemetry it drops are partly a constraint of its architecture.
+
+An exporter inverts both. It runs before DSH is involved, produces something a
+person can inspect and verify before trusting, and is not limited by the
+destination's event vocabulary.
+
+### What this does not claim
+
+The ecosystem is mature and fast-moving; the exporter position being open today
+is not a durable moat. The defensible asset is narrower than the position: the
+format invariants documented in `docs/mapping.md`, the traffic between the two
+write paths, and the `session.vN.jsonl.zstd` generation handling that the
+nearest competitor gets wrong.

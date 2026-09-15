@@ -2,7 +2,7 @@
 
 **English** | [中文](README.zh.md)
 
-# codex-to-dsh
+# codex-to-dsh-exporter
 
 <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later">
 <img src="https://img.shields.io/badge/node-%3E%3D22.15.0-brightgreen" alt="Node.js: >=22.15.0">
