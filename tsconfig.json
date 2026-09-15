@@ -8,10 +8,7 @@
       "path": "packages/dsh-session-artifact"
     },
     {
-      "path": "packages/dsh-session-store"
-    },
-    {
-      "path": "plugins/dsh-plugin-codex-history"
+      "path": "packages/codex-archive"
     }
   ]
 }

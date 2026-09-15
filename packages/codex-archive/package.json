@@ -1,0 +1,20 @@
+{
+  "name": "@codex-to-dsh/codex-archive",
+  "version": "0.1.0",
+  "description": "Read a Codex home read-only and write a portable, verifiable, self-describing archive",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunkaiWang-TheoPhy/codex-to-dsh-exporter.git",
+    "directory": "packages/codex-archive"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }, "./package.json": "./package.json" },
+  "files": ["dist"],
+  "engines": { "node": ">=22.15.0" },
+  "dependencies": {
+    "@codex-to-dsh/codex-rollout": "workspace:*"
+  }
+}
