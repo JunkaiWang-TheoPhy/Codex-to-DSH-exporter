@@ -20,6 +20,11 @@ jobs:
       # 严格按 package-lock.json 复现依赖树（与 npm install 不同，lockfile 与 package.json 不一致时直接失败）
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      # packages/ 下的两套测试此前没有任何门禁执行过：根 npm test 的模式是
+      # test/*.test.mjs，匹配不到 packages/*/test/。dsh-session-artifact 是
+      # TypeScript，其 pretest 钩子会先用 tsc 构建出 dist/ 再跑测试，因此这一步
+      # 同时守住「能编译」和「测试通过」两件事。
+      - run: npm run test:packages
       # REQ-13：覆盖率护栏——line ≥ 75%（基线 81.48%，宽松下限防显著回归）。
       # --test-coverage-lines 阈值 flag 需 node >= 22.7（CI 用 latest 22.x）。
       - run: npm run coverage

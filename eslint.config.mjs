@@ -8,9 +8,12 @@
 //   argsIgnorePattern '^_' — 接口契约位参数（如 provider 的 control/options）未消费时加 _ 前缀；
 //   ignoreRestSiblings — omit 模式（`({ isSummary, ...rest })`、`{ __action, ..., ...pub }`）。
 // dev/ 是 gitignore 的本地工程面（永不提交，CI 无此目录），排除在 lint 面外。
+// packages/*/dist/ 是 tsc 的产物，同样 gitignore；lint 产物既无意义又会把编译器
+// 生成的代码判成违规（实测：dist/rollout.js 里的一个死常量让 eslint 报错，而
+// 源文件里同一处才是该修的地方）。
 export default [
   {
-    ignores: ['dev/**'],
+    ignores: ['dev/**', 'packages/*/dist/**'],
   },
   {
     languageOptions: {

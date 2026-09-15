@@ -109,12 +109,15 @@
     "check:leaks": "node .github/scripts/check-leaks.mjs",
     "check:readme": "node .github/scripts/check-readme-sync.mjs README.md README.zh.md",
     "build": "node .github/scripts/build-check.mjs",
+    "build:artifact": "tsc -p packages/dsh-session-artifact/tsconfig.json",
+    "test:packages": "npm --prefix packages/dsh-session-artifact test && npm --prefix packages/codex-archive test",
     "prepack": "npm run build",
     "prepublishOnly": "npm test && git diff --quiet && git diff --cached --quiet && npm pack --dry-run"
   },
   "license": "MIT",
   "devDependencies": {
-    "eslint": "^10.8.1"
+    "eslint": "^10.8.1",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "fzstd": "^0.1.1"
