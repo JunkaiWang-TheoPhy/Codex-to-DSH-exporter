@@ -28,6 +28,23 @@ export interface ArchiveEntry {
   readonly sourceSha256: string;
   /** Size in bytes as stored. */
   readonly archiveBytes: number;
+  /**
+   * Digest of the bytes **as stored**, i.e. of the compressed stream for a
+   * session artifact.
+   *
+   * Required, not optional, because the alternative was measured: Node's zstd
+   * decoder accepts trailing bytes, so appending one byte to a frame still
+   * decompresses to byte-identical plaintext. A verifier comparing only
+   * `sourceSha256` therefore reports success on a file that is no longer what
+   * was written. Two digests cover both claims — the archive holds the original
+   * bytes, and the archive is the file that was written.
+   *
+   * It cannot be derived from the source by re-compressing: zstd output depends
+   * on chunk boundaries, so identical plaintext compressed in one write and in
+   * 64 KiB writes produces different frames (measured). The stored digest has to
+   * be recorded at write time.
+   */
+  readonly storedSha256: string;
 }
 
 /** Something the export deliberately did not take. */
