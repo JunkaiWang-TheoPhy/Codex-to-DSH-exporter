@@ -19,7 +19,7 @@ exact target for each surface.
 | `AGENTS.md` | Content preserved and in force | **Yes, but the target is occupied.** Needs a merge policy (§4). |
 | `rules/default.rules` | Command allow-list preserved | **Partial.** DSH's permission model is presets, not prefix rules. Needs a translation decision. |
 | `config.toml` model providers | Same models reachable | **Partial.** DSH routes by provider profile; Codex routes by `model_provider`. |
-| `sessions/` | Every record Codex wrote is present and recoverable | **Information-preserving yes; renderable no** (§2). |
+| `sessions/` | Every record Codex wrote is present and recoverable, except the encrypted reasoning blob | **Information-preserving yes; renderable no** (§2). |
 
 Two claims in that table are the whole reason this is worth doing carefully.
 
@@ -28,9 +28,15 @@ Two claims in that table are the whole reason this is worth doing carefully.
 Three facts, each measured or read from source.
 
 **Some Codex data has no reader anywhere.** `response_item/reasoning` carries
-`encrypted_content`, which is **84.1%** of a reasoning record's bytes on this
-machine. It is opaque outside OpenAI's own systems. Carrying it is possible;
-using it is not. Excluding it loses nothing that anyone can read.
+`encrypted_content`, which is **85.2%** of a reasoning record and **6.46%** of
+the whole corpus — 2.46 GB of the 38 GB on this machine.
+
+It is opaque outside OpenAI's own systems. DSH could carry it: an `ignorable`
+event places no constraint on its payload, and the archive stores it by default
+because it copies the rollout byte-for-byte. The decision is therefore not about
+capability but about whether it is worth 0.57 GB in the imported store. It is
+not, so the importer drops it and the archive keeps it. The readable part of
+reasoning — `content` and `summary`, **0.15%** of the corpus — is carried.
 
 **DSH assigns its own sequence numbers.** `seq` must be contiguous from 0, and
 the writer owns the counter. Codex's line order is preserved, but its numbering

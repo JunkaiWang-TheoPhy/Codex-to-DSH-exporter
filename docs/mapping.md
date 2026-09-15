@@ -301,11 +301,30 @@ Stated plainly, because a mapping document that only lists successes is
 misleading.
 
 - **Encrypted reasoning.** Measured on a uniform random sample of 200
-  rollouts: reasoning is **7.0%** of corpus bytes, and `encrypted_content` is
-  **84.1%** of a reasoning record. Only `content` and `summary` — **2.5%** of
-  reasoning bytes, **0.17%** of the corpus — are readable, and only those are
-  carried. Excluding the ciphertext costs almost nothing; it is simply not
-  information.
+  rollouts: reasoning is **7.59%** of corpus bytes, `encrypted_content` is
+  **85.2%** of a reasoning record and **6.46%** of the corpus, and the readable
+  `content` and `summary` are **0.15%** of the corpus.
+
+  | | Share of corpus | On 38 GB | In an archive (4.3x) |
+  |---|---|---|---|
+  | `encrypted_content` | 6.46% | 2.46 GB | 0.57 GB |
+  | readable reasoning | 0.15% | 0.06 GB | **0.01 GB** |
+
+  **The decision is made per layer, not once.** The archive keeps the
+  ciphertext; the DSH import drops it.
+
+  Dropping it from the *import* is right: it is unreadable by any party outside
+  OpenAI's systems, and carrying it would add 0.57 GB of noise to a store the
+  harness has to scan. It is not that DSH *cannot* carry it — an `ignorable`
+  event places no constraint on its payload — but that carrying it buys nothing.
+
+  Keeping it in the *archive* is also right, and costs no design work: the
+  archive stores the rollout byte-for-byte, so the ciphertext is retained by
+  default and dropping it would require deliberate filtering. The archive is the
+  only copy once the source is gone, and a byte-exact copy that quietly omitted
+  part of a record would break the property that makes it worth keeping.
+
+  Readable reasoning costs **0.01 GB** and is carried.
 - **Token accounting** unless explicitly requested.
 - **`base_instructions`**, the full Codex system prompt, several kilobytes per
   session.

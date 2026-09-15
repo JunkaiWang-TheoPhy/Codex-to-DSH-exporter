@@ -11,8 +11,9 @@
  *
  * - `web_search_call` identifies itself with `id`, not `call_id`, while its
  *   paired `web_search_end` uses `call_id`.
- * - `reasoning` carries `encrypted_content`, which is 84.1% of that record's
- *   bytes and is opaque outside OpenAI's own systems.
+ * - `reasoning` carries `encrypted_content`, which is 85.2% of that record's
+ *   bytes and 6.46% of the whole corpus, and is opaque outside OpenAI's own
+ *   systems. It is never read; only its presence is recorded.
  *
  * @module
  */

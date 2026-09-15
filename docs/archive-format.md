@@ -77,6 +77,25 @@ rebuilt from `source.jsonl.zst`, and an archive with only the normalized form is
 invalid.** A verifier must reject an archive missing a source file, even when
 its normalized companion is present.
 
+### What this buys, with one measured example
+
+`response_item/reasoning` carries an `encrypted_content` field that is opaque
+outside OpenAI's systems. Measured on a uniform random sample of 200 rollouts it
+is **6.46% of the corpus** — 2.46 GB of 38 GB, or about 0.57 GB compressed.
+
+The destination cannot use it, and an importer should drop it: there is no point
+adding 0.57 GB of unreadable bytes to a store the harness has to scan.
+
+The archive keeps it anyway, and this costs no design work. Because
+`source.jsonl.zst` is a byte-exact copy of the rollout, the field is retained by
+default; omitting it would require deliberate filtering. An archive that
+silently dropped part of a record would stop being evidence of what was on disk,
+which is the property the whole format exists for.
+
+That is the general rule this example illustrates: **the archive's default is to
+keep, and every omission is a decision someone has to make explicitly and record
+in `notCaptured`.**
+
 ## 3. `manifest.json`
 
 ```json
