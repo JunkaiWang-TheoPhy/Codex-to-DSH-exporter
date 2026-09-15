@@ -21,6 +21,7 @@ export default [
         process: 'readonly',
         URL: 'readonly', // 脚本（.github/scripts/*）用 new URL(..., import.meta.url) 定位路径
         setTimeout: 'readonly', // node 计时器（index.test.mjs 轮询让出事件循环）
+        Buffer: 'readonly', // node 缓冲；packages/codex-archive 用它算字节长度与流式写入
       },
     },
     rules: {
